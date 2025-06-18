@@ -6,6 +6,10 @@ pub struct Messages {
     pub client_hello: Record,
     pub server_hello: Record,
     pub server_handshake: DecryptedRecord,
+    pub encrypted_server_handshake: Record, // not needed
+    pub application_request: Record, // not needed
+    pub encrypted_ticket: Record, // not needed
+    pub http_response: Record,
 }
 
 
@@ -77,7 +81,7 @@ impl Record{
 
 pub struct ServerHello {
     pub random: [u8;32],
-    pub public_key: [u8; 32],// Vec<u8>
+    pub public_key: [u8; 32],
 }
 
 pub fn server_name(name: &str) -> Vec<u8> {
@@ -236,6 +240,7 @@ pub fn read_record(reader: &mut TcpStream) -> Record { // pub fn read_record<R: 
     reader.read_exact(&mut buf).expect("Failed to read 5 bytes");
 
     let length = u16::from_be_bytes(buf[3..5].try_into().unwrap() ) as usize; // let length = BigEndian::read_u16(&buf[3..5]) as usize;
+    println!("length is : {:?}", length);
     let contents = read(length, reader);
 
     let mut record = buf.to_vec();
@@ -267,16 +272,9 @@ pub fn read_upto(length: usize, reader: &mut dyn Read) -> Vec<u8> {
     let n = reader.read(&mut buf).expect("Failed to read data");
     buf.truncate(n); // Обрезаем буфер до фактически прочитанного размера
     buf
-}/*
+}
 
-pub fn concatenate(bufs: Vec<&[u8]>) -> Vec<u8> {
-    let mut buf = Vec::new();
-    for b in bufs {
-        buf.extend_from_slice(b);
-    }
-    buf
-}*/
-
+// pub fn concatenate(bufs: Vec<&[u8]>) -> Vec<u8> {
 pub fn concatenate(bufs: &[&[u8]]) -> Vec<u8> {
     let mut buf = Vec::new();
     for b in bufs {

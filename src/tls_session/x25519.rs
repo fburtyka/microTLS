@@ -1,6 +1,6 @@
 use std::fs::File;
-use std::io::{self, BufRead, Read, Write};
-use std::path::Path;
+use std::io::{self, BufRead, Read};
+//use std::path::Path;
 use std::error::Error;
 
 const BASE_POINT:[u8;32] = [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];

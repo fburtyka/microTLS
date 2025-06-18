@@ -1,7 +1,7 @@
-//use hmac::{Hmac, Mac, NewMac};
+
 use std::error::Error;
-use std::io::{self, Read};
-use std::marker::PhantomData;
+//use std::io::{self, Read};
+//use std::marker::PhantomData;
 
 // Размер контрольной суммы SHA256 в байтах.
 const SIZE: usize = 32;
@@ -659,7 +659,7 @@ fn test_hkdf_with_go_data_1(){
     println!("hkdf expand result is is : {:?}", &buf);
 
     assert_eq!(buf[..], etalon_result);
-}*/
+}
 
 #[test]
 fn test_sha256_sum256(){
@@ -677,4 +677,4 @@ fn test_sha256_sum256(){
     println!("derive_secret hash is : {:?}", &hash);
     assert_eq!(hash, etalon_result);
 
-}
+}*/

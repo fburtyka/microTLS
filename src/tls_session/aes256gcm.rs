@@ -643,7 +643,7 @@ impl Aes256Cipher {
     }
 
 	pub fn encrypt(&self, dst: &mut [u8;16], src: &[u8;16]) {
-		encrypt_block(&self.enc, dst, &src)
+		encrypt_block(&self.enc, dst, &src);
 	}
 
 	pub fn decrypt(&self, dst: &mut [u8;16], src: &[u8;16]) {
@@ -928,19 +928,20 @@ impl Gcm {
 
         let mut remaining_in = in_data;
 
+		let mut start_index = 0;
         while remaining_in.len() >= GCM_BLOCK_SIZE {
             self.cipher.encrypt(&mut mask, counter);
             gcm_inc32(counter);
-
-			let start_index = out.len() - remaining_in.len();
+			//let start_index = out.len() - remaining_in.len();
             xor_bytes(&mut out[start_index..], &remaining_in[..GCM_BLOCK_SIZE], &mask);
             remaining_in = &remaining_in[GCM_BLOCK_SIZE..];
+			start_index+=GCM_BLOCK_SIZE;
         }
 
         if !remaining_in.is_empty() {
             self.cipher.encrypt(&mut mask, counter);
             gcm_inc32(counter);
-			let start_index = out.len() - remaining_in.len();
+			//let start_index = out.len() - remaining_in.len();
             xor_bytes(&mut out[start_index..], remaining_in, &mask);
         }
     }

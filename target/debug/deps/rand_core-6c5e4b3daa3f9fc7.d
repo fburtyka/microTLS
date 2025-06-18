@@ -1,0 +1,12 @@
+D:\RustCode\microTLS\target\debug\deps\librand_core-6c5e4b3daa3f9fc7.rmeta: C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\lib.rs C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\block.rs C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\error.rs C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\impls.rs C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\le.rs C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\os.rs
+
+D:\RustCode\microTLS\target\debug\deps\librand_core-6c5e4b3daa3f9fc7.rlib: C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\lib.rs C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\block.rs C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\error.rs C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\impls.rs C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\le.rs C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\os.rs
+
+D:\RustCode\microTLS\target\debug\deps\rand_core-6c5e4b3daa3f9fc7.d: C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\lib.rs C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\block.rs C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\error.rs C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\impls.rs C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\le.rs C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\os.rs
+
+C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\lib.rs:
+C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\block.rs:
+C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\error.rs:
+C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\impls.rs:
+C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\le.rs:
+C:\Users\Asus\.cargo\registry\src\index.crates.io-6f17d22bba15001f\rand_core-0.6.4\src\os.rs:
