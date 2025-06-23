@@ -38,7 +38,7 @@ fn append_uint32(b: &mut Vec<u8>, v: u32) {
     b.push(v as u8);
 }
 
-fn append_uint64(b: &mut Vec<u8>, v: u64) {
+pub fn append_uint64(b: &mut Vec<u8>, v: u64) {
     b.push((v >> 56) as u8);
     b.push((v >> 48) as u8);
     b.push((v >> 40) as u8);

@@ -6,12 +6,75 @@ pub mod network;
 
 use tls_session::Session;
 
-use std::io::{self, Write, Read};
+use std::io::{self, Write, BufRead, Read};
 use std::net::TcpStream;
+use std::fs::File;
 
+use hex::FromHex;
 
+/*fn val(c: u8) -> Option<u8> {
+    match c {
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'0'..=b'9' => Some(c - b'0'),
+        _ => None,
+    }
+}
+
+fn from_hex(hex: &str) -> Option<Vec<u8>> {
+        //let hex = hex.as_ref();
+    if hex.len() % 2 != 0 {
+        return None;//Err(FromHexError::OddLength);
+    }
+
+    let mut result= vec![0u8; hex.len() / 2];
+
+    for i in 0..hex.len() / 2 {
+        result[i] = val(hex.get()[2 * i])? << 4 | val(hex[2 * i + 1])?;
+    }
+
+    return Some(result);
+        //hex.chunks(2)
+            //.enumerate()
+            //.map(|(i, pair)| Some(val(pair[0], 2 * i)? << 4 | val(pair[1], 2 * i + 1)?))
+            //.collect()
+}*/
+
+fn deserialize_from_hex_str(data: &str) -> Result<Vec<u8>, hex::FromHexError> {
+    Vec::from_hex(data)
+}
 
 fn main() {
+    // читать файл с
+    let mut file = File::open("SerializedTLS.txt").unwrap();
+
+    let mut contents = String::new();
+
+    // Считываем содержимое файла в строку
+    file.read_to_string(&mut contents).unwrap();
+
+    // "kid": "1bb774bd8729ea38e9c2fe0c64d2ca948bf66f0f"
+    // "kid": "882503a5fd56e9f734dfba5c50d7bf48db284ae9",
+    // kid: 0d8a67399e7882acae7d7f68b2280256a796a582  current_decoded_kid is : Ok([13, 138, 103, 57, 158, 120, 130, 172, 174, 125, 127, 104, 178, 40, 2, 86, 167, 150, 165, 130])
+
+    // Выводим содержимое на экран
+    println!("Содержимое файла:\n{}", contents);
+    let mut tls_data = deserialize_from_hex_str(&contents).unwrap();
+    println!("tls_data is : {:?}", tls_data);
+    let mut data = vec![13, 138, 103, 57, 158, 120, 130, 172, 174, 125, 127, 104, 178, 40, 2, 86, 167, 150, 165, 130];//vec![0u8; 20];
+    let mut root_cert = tls_session::get_root_cert_from_online();
+    let mut len_of_root_cert = vec![5u8, 102u8];
+    data.append(&mut len_of_root_cert);
+    data.append(&mut root_cert.to_vec());
+    data.append(&mut tls_data);
+
+    let public_key_data = tls_session::extract_json_public_keys_from_tls(data);
+
+    println!("public_key_data is : {:?}", public_key_data);
+
+}
+
+fn mainOnline() {
     // get("jvns.ca");
     // get("https://www.googleapis.com/oauth2/v3/certs");
     get("www.googleapis.com");

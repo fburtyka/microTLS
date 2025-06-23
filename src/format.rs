@@ -1,6 +1,7 @@
 use std::io::{self, Read};
 use std::net::TcpStream;
-//use byteorder::{BigEndian, ReadBytesExt}; // Для работы с порядком байтов
+
+use chrono::{DateTime, FixedOffset, TimeZone};
 
 pub struct Messages {
     pub client_hello: Record,
@@ -293,4 +294,41 @@ pub fn extension(id: u16, contents: Vec<u8>) -> Vec<u8> {
         &u16_to_bytes(contents.len() as u16),
         &contents]
     )
+}
+
+pub fn extract_all_items(item: &str, data: &str) -> Vec<String> {
+    //let target = r#""n": ""#; // Подстрока для поиска
+    let target = format!("{}{}{}", r#"""#, item, r#"": ""#); // Подстрока для поиска
+    let mut results = Vec::new();
+    let mut start = 0;
+
+    while let Some(start_index) = data[start..].find(&target) {
+        let start_pos = start + start_index + target.len(); // Позиция после подстроки "n": "
+
+        // Ищем конец подстроки
+        if let Some(end_index) = data[start_pos..].find('"') {
+            let end_pos = start_pos + end_index; // Конечная позиция
+            results.push(data[start_pos..end_pos].to_string()); // Добавляем подстроку в результаты
+            start = end_pos; // Обновляем стартовую позицию для следующего поиска
+        } else {
+            break; // Если кавычка не найдена, выходим из цикла
+        }
+    }
+
+    results // Возвращаем массив найденных подстрок
+}
+
+pub fn extract_expires(data: &str) -> i64 {
+    let target = r#"Expires: "#; // Подстрока для поиска
+    let start= data.find(target).unwrap();
+    let start_pos = start + target.len(); // Позиция после подстроки
+    let end = data[start_pos..].find('\n').unwrap();
+    let end_pos = start_pos + end; // Конечная позиция
+    let expires_time_string = data[start_pos..end_pos].to_string();
+    println!("expires_time_string is : {:?}", &expires_time_string.trim());
+
+    let dt: DateTime<FixedOffset> = DateTime::parse_from_rfc2822(&expires_time_string.trim()).unwrap();
+    let timestamp = dt.timestamp();
+    println!("UTC timestamp: {}", timestamp);
+    return timestamp;
 }

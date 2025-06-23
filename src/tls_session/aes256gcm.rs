@@ -420,7 +420,7 @@ fn expand_key(key: &[u8;16], enc: &mut [u32;44], dec: &mut [u32;44]) {
     for i in nk..len_enc {
         let mut t = enc[i - 1];
         if i % nk == 0 {
-            t = subw(rotw(t)) ^ ((POWX[(i / nk - 1)] as u32) << 24);
+            t = subw(rotw(t)) ^ ((POWX[i / nk - 1] as u32) << 24);
         } else if nk > 6 && i % nk == 4 {
             t = subw(t);
         }
