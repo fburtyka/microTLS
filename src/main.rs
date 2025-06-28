@@ -44,7 +44,14 @@ fn deserialize_from_hex_str(data: &str) -> Result<Vec<u8>, hex::FromHexError> {
     Vec::from_hex(data)
 }
 
-fn main() {
+fn append_uint32(b: &mut Vec<u8>, v: u32) {
+    b.push((v >> 24) as u8);
+    b.push((v >> 16) as u8);
+    b.push((v >> 8) as u8);
+    b.push(v as u8);
+}
+
+fn mainOffline() {
     // читать файл с
     let mut file = File::open("SerializedTLS.txt").unwrap();
 
@@ -61,20 +68,26 @@ fn main() {
     println!("Содержимое файла:\n{}", contents);
     let mut tls_data = deserialize_from_hex_str(&contents).unwrap();
     println!("tls_data is : {:?}", tls_data);
-    let mut data = vec![13, 138, 103, 57, 158, 120, 130, 172, 174, 125, 127, 104, 178, 40, 2, 86, 167, 150, 165, 130];//vec![0u8; 20];
-    let mut root_cert = tls_session::get_root_cert_from_online();
+    let current_timestamp = 1000u32;// SystemTime::now()
+    let mut data: Vec<u8> = Vec::new();
+    append_uint32(&mut data, current_timestamp);
+    let mut kid = vec![13, 138, 103, 57, 158, 120, 130, 172, 174, 125, 127, 104, 178, 40, 2, 86, 167, 150, 165, 130];//vec![0u8; 20];
+    let root_cert = tls_session::get_root_cert_from_online();
     let mut len_of_root_cert = vec![5u8, 102u8];
+    data.append(&mut kid);
     data.append(&mut len_of_root_cert);
     data.append(&mut root_cert.to_vec());
     data.append(&mut tls_data);
 
-    let public_key_data = tls_session::extract_json_public_keys_from_tls(data);
+    println!("THE data is : {:?}", data);
+
+    let public_key_data = tls_session::extract_json_public_key_from_tls(data);
 
     println!("public_key_data is : {:?}", public_key_data);
 
 }
 
-fn mainOnline() {
+fn main() {
     // get("jvns.ca");
     // get("https://www.googleapis.com/oauth2/v3/certs");
     get("www.googleapis.com");
@@ -97,7 +110,7 @@ fn get(domain: &str) {
     let ticket = session.receive_data(); // let _ = session.receive_data(); // ignore the session ticket
     println!("ticket is : {:?}", ticket);
     println!("ReceiveData done");
-    let resp = session.receive_http_response(); // let resp = session.receive_http_response().expect("Failed to receive HTTP response")
+    session.receive_http_response(); // let resp = session.receive_http_response().expect("Failed to receive HTTP response")
     //println!("ReceiveHTTPResponse done");
     //println!("{}", String::from_utf8_lossy(&resp));
     let serialized_session = session.serialize();

@@ -586,7 +586,7 @@ fn crecip(out: &mut [i64; 19], z: &[i64; 19]) {
 
     fsquare(&mut t0, &z2_10_0);
     fsquare(&mut t1, &t0);
-    for i in (2..10).step_by(2) {
+    for _i in (2..10).step_by(2) {
         fsquare(&mut t0, &t1);
         fsquare(&mut t1, &t0);
     }
@@ -594,7 +594,7 @@ fn crecip(out: &mut [i64; 19], z: &[i64; 19]) {
 
     fsquare(&mut t0, &z2_20_0);
     fsquare(&mut t1, &t0);
-    for i in (2..20).step_by(2) {
+    for _i in (2..20).step_by(2) {
         fsquare(&mut t0, &t1);
         fsquare(&mut t1, &t0);
     }
@@ -602,7 +602,7 @@ fn crecip(out: &mut [i64; 19], z: &[i64; 19]) {
 
     fsquare(&mut t1, &t0);
     fsquare(&mut t0, &t1);
-    for i in (2..10).step_by(2) {
+    for _i in (2..10).step_by(2) {
         fsquare(&mut t1, &t0);
         fsquare(&mut t0, &t1);
     }
@@ -610,7 +610,7 @@ fn crecip(out: &mut [i64; 19], z: &[i64; 19]) {
 
     fsquare(&mut t0, &z2_50_0);
     fsquare(&mut t1, &t0);
-    for i in (2..50).step_by(2) {
+    for _i in (2..50).step_by(2) {
         fsquare(&mut t0, &t1);
         fsquare(&mut t1, &t0);
     }
@@ -618,7 +618,7 @@ fn crecip(out: &mut [i64; 19], z: &[i64; 19]) {
 
     fsquare(&mut t1, &z2_100_0);
     fsquare(&mut t0, &t1);
-    for i in (2..100).step_by(2) {
+    for _i in (2..100).step_by(2) {
         fsquare(&mut t1, &t0);
         fsquare(&mut t0, &t1);
     }
@@ -626,7 +626,7 @@ fn crecip(out: &mut [i64; 19], z: &[i64; 19]) {
 
     fsquare(&mut t0, &t1);
     fsquare(&mut t1, &t0);
-    for i in (2..50).step_by(2) {
+    for _i in (2..50).step_by(2) {
         fsquare(&mut t0, &t1);
         fsquare(&mut t1, &t0);
     }

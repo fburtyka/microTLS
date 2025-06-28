@@ -1,14 +1,93 @@
 //use core::slice::SlicePattern;
 use std::net;
 use std::ops::AddAssign;
-use std::time::SystemTime;
+//use std::time::SystemTime;
+use chrono::{DateTime, Utc, TimeZone, ParseError};
 use std::ops::Neg;
 
-//use num_bigint::{BigInt, Sign};
 use num_bigint::{BigInt, ToBigInt, Sign};
 //use num_traits::One;
 use std::iter::FromIterator;
+use std::str::FromStr;
 
+// ASN.1 objects have metadata preceding them:
+//   the tag: the type of the object
+//   a flag denoting if this object is compound or not
+//   the class type: the namespace of the tag
+//   the length of the object, in bytes
+
+// Here are some standard tags and classes
+
+// ASN.1 tags represent the type of the following object.
+const TagBoolean: u8         = 1;
+const TagInteger: u8         = 2;
+const TagBitString: u8       = 3;
+const TagOctetString: u8     = 4;
+const TagNull: u8            = 5;
+const TagOID: u8             = 6;
+const TagEnum: u8            = 10;
+const TagUTF8String: u8      = 12;
+const TagSequence: u8        = 16;
+const TagSet: u8             = 17;
+const TagNumericString: u8   = 18;
+const TagPrintableString: u8 = 19;
+const TagT61String: u8       = 20;
+const TagIA5String: u8       = 22;
+const TagUTCTime: u8         = 23;
+const TagGeneralizedTime: u8 = 24;
+const TagGeneralString: u8   = 27;
+const TagBMPString: u8       = 30;
+
+// ASN.1 class types represent the namespace of the tag.
+const ClassUniversal: u16       = 0;
+const ClassApplication: u16     = 1;
+const ClassContextSpecific: u16 = 2;
+const ClassPrivate: u16         = 3;
+
+// NullRawValue is a [RawValue] with its Tag set to the ASN.1 NULL type tag (5).
+//const NullRawValue: RawValue = RawValue{Tag: TagNull};
+
+// NullBytes contains bytes representing the DER-encoded ASN.1 NULL type.
+const NullBytes: [u8; 2] = [TagNull, 0];
+
+#[derive(Debug)]
+pub enum SignatureAlgorithm {
+    UnknownSignatureAlgorithm = 0,
+    MD2WithRSA = 1,   // Unsupported.
+    MD5WithRSA = 2,   // Only supported for signing, not verification.
+    SHA1WithRSA = 3,  // Only supported for signing, and verification of CRLs, CSRs, and OCSP responses.
+    SHA256WithRSA = 4,
+    SHA384WithRSA = 5,
+    SHA512WithRSA = 6,
+    DSAWithSHA1 = 7, // Unsupported.
+    DSAWithSHA256 = 8, // Unsupported.
+    ECDSAWithSHA1 = 9, // Only supported for signing, and verification of CRLs, CSRs, and OCSP responses.
+    ECDSAWithSHA256 = 10,
+    ECDSAWithSHA384 = 11,
+    ECDSAWithSHA512 = 12,
+    SHA256WithRSAPSS = 13,
+    SHA384WithRSAPSS = 14,
+    SHA512WithRSAPSS = 15,
+    PureEd25519 = 16,
+}
+/*
+const UnknownSignatureAlgorithm: u16 = 0;
+const MD2WithRSA: u16 = 1;  // Unsupported.
+const MD5WithRSA: u16 = 2;  // Only supported for signing, not verification.
+const SHA1WithRSA: u16 = 3; // Only supported for signing, and verification of CRLs, CSRs, and OCSP responses.
+const SHA256WithRSA: u16 = 4;
+const SHA384WithRSA: u16 = 5;
+const SHA512WithRSA: u16 = 6;
+const DSAWithSHA1: u16 = 7;   // Unsupported.
+const DSAWithSHA256: u16 = 8; // Unsupported.
+const ECDSAWithSHA1: u16 = 9; // Only supported for signing, and verification of CRLs, CSRs, and OCSP responses.
+const ECDSAWithSHA256: u16 = 10;
+const ECDSAWithSHA384: u16 = 11;
+const ECDSAWithSHA512: u16 = 12;
+const SHA256WithRSAPSS: u16 = 13;
+const SHA384WithRSAPSS: u16 = 14;
+const SHA512WithRSAPSS: u16 = 15;
+const PureEd25519: u16 = 16;*/
 
 pub const ROOT_CERT_FROM_ONLINE: [u8; 1382] = [48, 130, 5, 98, 48, 130, 4, 74, 160, 3, 2, 1, 2, 2, 16, 119, 189, 13, 108, 219, 54, 249, 26, 234, 33, 15, 196, 240,
         88, 211, 13, 48, 13, 6, 9, 42, 134, 72, 134, 247, 13, 1, 1, 11, 5, 0, 48, 87, 49, 11, 48, 9, 6, 3, 85, 4, 6, 19, 2, 66, 69, 49, 25, 48, 23,
@@ -54,6 +133,83 @@ pub const ROOT_CERT_FROM_ONLINE: [u8; 1382] = [48, 130, 5, 98, 48, 130, 4, 74, 1
         59, 169, 179, 55, 231, 195, 68, 164, 126, 216, 108, 215, 199, 70, 245, 146, 155, 231, 213, 33, 190, 102, 146, 25, 148, 85, 108, 212, 41,
         178, 13, 193, 102, 91, 226, 119, 73, 72, 40, 237, 157, 215, 26, 51, 114, 83, 179, 130, 53, 207, 98, 139, 201, 36, 139, 165, 183, 57, 12,
         187, 126, 42, 65, 191, 82, 207, 252, 162, 150, 182, 194, 130, 63];
+
+
+const OID_SIGNATURE_MD2_WITH_RSA: [i32; 7]      = [1, 2, 840, 113549, 1, 1, 2];
+const OID_SIGNATURE_MD5_WITH_RSA: [i32; 7]      = [1, 2, 840, 113549, 1, 1, 4];
+const OID_SIGNATURE_SHA1_WITH_RSA: [i32; 7]     = [1, 2, 840, 113549, 1, 1, 5];
+const OID_SIGNATURE_SHA256_WITH_RSA: [i32; 7]   = [1, 2, 840, 113549, 1, 1, 11];
+const OID_SIGNATURE_SHA384_WITH_RSA: [i32; 7]   = [1, 2, 840, 113549, 1, 1, 12];
+const OID_SIGNATURE_SHA512_WITH_RSA: [i32; 7]   = [1, 2, 840, 113549, 1, 1, 13];
+const OID_SIGNATURE_RSA_PSS: [i32; 7]          = [1, 2, 840, 113549, 1, 1, 10];
+const OID_SIGNATURE_DSA_WITH_SHA1: [i32; 6]     = [1, 2, 840, 10040, 4, 3];
+const OID_SIGNATURE_DSA_WITH_SHA256: [i32; 9]   = [2, 16, 840, 1, 101, 3, 4, 3, 2];
+const OID_SIGNATURE_ECDSA_WITH_SHA1: [i32; 6]   = [1, 2, 840, 10045, 4, 1];
+const OID_SIGNATURE_ECDSA_WITH_SHA256: [i32; 7] = [1, 2, 840, 10045, 4, 3, 2];
+const OID_SIGNATURE_ECDSA_WITH_SHA384: [i32; 7] = [1, 2, 840, 10045, 4, 3, 3];
+const OID_SIGNATURE_ECDSA_WITH_SHA512: [i32; 7] = [1, 2, 840, 10045, 4, 3, 4];
+const OID_SIGNATURE_ED25519: [i32; 4] = [1, 3, 101, 112];
+
+
+
+const OID_SHA256: [i32; 9] = [2, 16, 840, 1, 101, 3, 4, 2, 1];
+const OID_SHA384: [i32; 9] = [2, 16, 840, 1, 101, 3, 4, 2, 2];
+const OID_SHA512: [i32; 9] = [2, 16, 840, 1, 101, 3, 4, 2, 3];
+
+const OID_MGF1: [i32; 7] = [1, 2, 840, 113549, 1, 1, 8];
+
+// oidISOSignatureSHA1WithRSA means the same as oidSignatureSHA1WithRSA
+// but it's specified by ISO. Microsoft's makecert.exe has been known
+// to produce certificates with this OID.
+const oidISOSignatureSHA1WithRSA: [i32; 6] = [1, 3, 14, 3, 2, 29];
+
+
+const UnknownPublicKeyAlgorithm: u16 = 0;
+const RSA: u16 = 1;
+const DSA: u16 = 2; // Only supported for parsing.
+const ECDSA: u16 = 3;
+const Ed25519: u16 = 4;
+
+#[derive(Debug)]
+pub enum PublicKeyAlgorithm {
+    UnknownPublicKeyAlgorithm = 0,
+    RSA = 1,
+    DSA = 2,
+    ECDSA = 3,
+    Ed25519 = 4,
+}
+
+impl PublicKeyAlgorithm {
+    pub fn to_string(&self) -> String {
+        match self {
+            PublicKeyAlgorithm::UnknownPublicKeyAlgorithm => "UnknownPublicKeyAlgorithm".to_string(),
+            PublicKeyAlgorithm::RSA => "RSA".to_string(),
+            PublicKeyAlgorithm::DSA => "DSA".to_string(),
+            PublicKeyAlgorithm::ECDSA => "ECDSA".to_string(),
+            PublicKeyAlgorithm::Ed25519 => "Ed25519".to_string(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct AlgorithmDetails {
+    algo: SignatureAlgorithm,
+    name: String,
+    oid: Vec<i32>, //ObjectIdentifier,
+    pub_key_algo: PublicKeyAlgorithm,
+    hash: Option<String>, // Можно использовать String для хеш-алгоритма
+}
+
+
+#[derive(Debug)]
+pub struct PssParameters {
+    // Поля не являются обязательными, так как значения по умолчанию
+    // указывают на SHA-1 (который больше не подходит для использования в подписях).
+    pub hash: AlgorithmIdentifier,
+    pub mgf: AlgorithmIdentifier,
+    pub salt_length: i32,
+    pub trailer_field: Option<i32>, // Опциональное поле с значением по умолчанию 1
+}
 
 // Tag represents an ASN.1 identifier octet, consisting of a tag number
 // (indicating a type) and class (such as context-specific or constructed).
@@ -115,12 +271,14 @@ pub const ENUM: u8 = 10u8;
 pub const UTF8_STRING: u8 = 12u8;
 pub const SEQUENCE: u8 = 16u8 | CLASS_CONSTRUCTED;
 pub const SET: u8 = 17u8 | CLASS_CONSTRUCTED;
+pub const NUMERIC_STRING: u8 = 18u8;
 pub const PRINTABLE_STRING: u8 = 19u8;
 pub const T61_STRING: u8 = 20u8;
 pub const IA5_STRING: u8 = 22u8;
 pub const UTC_TIME: u8 = 23u8;
 pub const GENERALIZED_TIME: u8 = 24u8;
 pub const GENERAL_STRING: u8 = 27u8;
+pub const BMP_STRING: u8 = 30u8;
 
 // Предполагается, что String - это структура, которая обрабатывает данные ASN.1
 #[derive(Debug, Clone)]
@@ -147,8 +305,6 @@ impl ASN1String {
         let mut t = 0u8;
 
         if !self.read_any_asn1_element(out, &mut t) || t != tag {
-            println!("t is : {:?}", t);
-            println!("tag is : {:?}", tag);
             return false;
         }
         true
@@ -427,20 +583,25 @@ impl ASN1String {
         // ITU-T X.690 section 8.1.3
         let (length, header_len) = if len_byte & 0x80 == 0 {
             // Короткая длина (section 8.1.3.4), закодированная в битах 1-7.
+            //println!("read_asn1_impl short len ");
             (u32::from(len_byte) + 2, 2)
         } else {
             // Длинная длина (section 8.1.3.5).
             let len_len = len_byte & 0x7f;
 
             if len_len == 0 || len_len > 4 || self.0.len() < (2 + len_len as usize) {
+                //println!("read_asn1_impl long len false");
                 return false;
             }
 
             let mut len_bytes = ASN1String(self.0[2..2 + len_len as usize].to_vec());
             let mut len32 = 0u32;
+            //println!("read_asn1_impl len_bytes before is : {:?}", &len_bytes);
             if !len_bytes.read_unsigned(&mut len32, len_len as usize) {
                 return false;
             }
+            //println!("read_asn1_impl len_bytes after is : {:?}", &len_bytes);
+            //println!("read_asn1_impl len32 is : {:?}", &len32);
 
             // ITU-T X.690 section 10.1 (DER length forms) требует кодирования длины
             // с минимальным числом октетов.
@@ -457,16 +618,62 @@ impl ASN1String {
             }
             (header_len + len32, header_len)
         };
+        //println!("read_asn1_impl length is : {:?}", &length);
+        //println!("read_asn1_impl header_len is : {:?}", &header_len);
 
+        //println!("self.0 before !self.read_bytes(out, length as usize) is : {:?}", &self.0);
         if length as usize > self.0.len() || !self.read_bytes(out, length as usize) {
             return false;
         }
+        //println!("read_asn1_impl out is : {:?}", &out);
         if skip_header && !out.skip(header_len as usize) {
             panic!("cryptobyte: internal error");
         }
+        //println!("out (not panic) is : {:?}", &out);
+        //println!("self.0 (not panic) is : {:?}", &self.0);
 
         true
     }
+
+    // fn read_asn1_utc_time(&mut self) -> Result<DateTime<Utc>, String> {
+    fn read_asn1_utc_time(&mut self) -> Option<DateTime<Utc>> {
+        let mut bytes = ASN1String{ 0: Vec::new()};
+        if !self.read_asn1(&mut bytes, TagUTCTime) {
+            return None;//return Err("Malformed UTCTime".to_string());
+        }
+
+        let t = String::from_utf8_lossy(&bytes.0).into_owned();
+        let format_str = "%y%m%d%H%M%SZ"; // Стандартный формат UTCTime
+        match Utc.datetime_from_str(&t, format_str) {
+            Ok(res) => {
+                // Применение дополнительной логики для 2050 года
+                //if res.year() >= 2050 {
+                    //let res = res - chrono::Duration::days(36525); // -100 лет
+                    //Ok(res)
+                //} else {
+                    //Ok(res)
+                //}
+                Some(res)
+            }
+            Err(_) => None,//Err("Failed to parse UTCTime".to_string()),
+        }
+    }
+
+    // fn read_asn1_generalized_time(&mut self) -> Result<DateTime<Utc>, String> {
+    fn read_asn1_generalized_time(&mut self) -> Option<DateTime<Utc>> {
+        let mut bytes = ASN1String{ 0: Vec::new()};
+        if !self.read_asn1(&mut bytes, TagGeneralizedTime) {
+            return None;//Err("Malformed GeneralizedTime".to_string());
+        }
+
+        let t = String::from_utf8_lossy(&bytes.0).into_owned();
+        let format_str = "%Y%m%d%H%M%S%.fZ"; // Стандартный формат GeneralizedTime
+        match Utc.datetime_from_str(&t, format_str) {
+            Ok(res) => Some(res),//Ok(res),
+            Err(_) => None,//Err("Failed to parse GeneralizedTime".to_string()),
+        }
+    }
+
 
     // Реализация чтения беззнакового целого числа из ASN.1
     // Для упрощения реализации функции, предполагается,
@@ -511,14 +718,20 @@ impl ASN1String {
         }
     }
 
+    // Skip advances the String by n byte and reports whether it was successful.
     fn skip(&mut self, length: usize) -> bool {
         // Реализация пропуска определенного количества байтов
-        if length <= self.0.len() {
-            self.0.drain(..length);
-            true
-        } else {
-            false
+        //if length <= self.0.len() {
+            //self.0.drain(..length);
+            //true
+        //} else {
+            //false
+        //}
+        match self.read(length){
+            Some(res) => true,
+            None => false
         }
+        // return s.read(n) != nil
     }
 
 }
@@ -598,8 +811,8 @@ pub struct Name {
     pub postal_code: Vec<String>,
     pub serial_number: String,
     pub common_name: String,
-    //pub names: Vec<AttributeTypeAndValue>, // Все разобранные атрибуты
-    //pub extra_names: Vec<AttributeTypeAndValue>, // Атрибуты, копируемые в любые сериализованные имена
+    pub names: Vec<AttributeTypeAndValue>, // Все разобранные атрибуты
+    pub extra_names: Vec<AttributeTypeAndValue>, // Атрибуты, копируемые в любые сериализованные имена
 }
 
 impl Name {
@@ -614,6 +827,43 @@ impl Name {
             postal_code: Vec::new(),
             serial_number: String::new(),
             common_name: String::new(),
+            names: Vec::new(),
+            extra_names: Vec::new(),
+        }
+    }
+
+    // FillFromRDNSequence populates Name from the provided [RDNSequence].
+    // Multi-entry RDNs are flattened, all entries are added to the
+    // relevant Name's fields, and the grouping is not preserved.
+    pub fn fill_from_rdn_sequence(&mut self, rdns: &Vec<Vec<AttributeTypeAndValue>>) {
+        for rdn in rdns {
+            if rdn.is_empty() {
+                continue;
+            }
+
+            for atv in rdn {
+                self.names.push(atv.clone()); // Сохраняем атрибут
+
+                // Проверяем значение
+                let value = &atv.value;
+
+                let t = &atv.atype;
+                if t.len() == 4 && t[0] == 2 && t[1] == 5 && t[2] == 4 {
+                    match t[3] {
+                        3 => self.common_name = value.clone(),
+                        5 => self.serial_number = value.clone(),
+                        6 => self.country.push(value.clone()),
+                        7 => self.locality.push(value.clone()),
+                        8 => self.province.push(value.clone()),
+                        9 => self.street_address.push(value.clone()),
+                        10 => self.organization.push(value.clone()),
+                        11 => self.organizational_unit.push(value.clone()),
+                        17 => self.postal_code.push(value.clone()),
+                        _ => {}
+                    }
+                }
+
+            }
         }
     }
 }
@@ -627,17 +877,16 @@ struct Certificate {
     raw_issuer: Vec<u8>,                      // DER encoded Issuer
 
     signature: Vec<u8>,
-    //signature_algorithm: SignatureAlgorithm,
-
-    //public_key_algorithm: PublicKeyAlgorithm,
+    signature_algorithm: SignatureAlgorithm,
+    public_key_algorithm: PublicKeyAlgorithm,
     //public_key: Option<Box<dyn PublicKey>>,    // Using trait object for dynamic dispatch
 
     version: i64,
     serial_number: BigInt,     // serial_number: Option<BigInt>,          // Type for big integers
     issuer: Name,
     subject: Name,
-    not_before: SystemTime,                    // Using SystemTime for time representation
-    not_after: SystemTime,
+    not_before: DateTime<Utc>,//i64,//SystemTime,                    // Using SystemTime for time representation
+    not_after: DateTime<Utc>,//i64,//SystemTime,
     //key_usage: KeyUsage,
 
     extensions: Vec<Extension>,          // Raw X.509 extensions
@@ -688,15 +937,15 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
         raw_subject: Vec::new(),
         raw_issuer: Vec::new(),
         signature: Vec::new(),
-        //signature_algorithm: SignatureAlgorithm::default(), // Default value
-        //public_key_algorithm: PublicKeyAlgorithm::default(), // Default value
+        signature_algorithm: SignatureAlgorithm::UnknownSignatureAlgorithm, // Default value
+        public_key_algorithm: PublicKeyAlgorithm::UnknownPublicKeyAlgorithm, // Default value
         //public_key: None,
         version: 0,
         serial_number: BigInt::default(),
         issuer: Name::default(), // Assuming a default implementation
         subject: Name::default(),
-        not_before: SystemTime::now(),
-        not_after: SystemTime::now(),
+        not_before: DateTime::<Utc>::MIN_UTC, //0i64,//SystemTime::now(),
+        not_after: DateTime::<Utc>::MAX_UTC,//SystemTime::now(),
         //key_usage: KeyUsage::default(), // Default value
         extensions: Vec::new(),
         extra_extensions: Vec::new(),
@@ -759,6 +1008,7 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
         //return Err("x509: malformed tbs certificate".into());
         panic!("x509: malformed tbs certificate");
     }
+    println!("parseCertificate tbs after read_asn1 is : {:?}", &tbs);
     cert.raw_tbs_certificate = tbs.0.clone();
 
     let mut tbs1 = tbs.clone();
@@ -767,18 +1017,23 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
         panic!("x509: malformed tbs certificate");
     }
 
+    println!("parseCertificate tbs1 after read_asn1 is : {:?}", &tbs1);
+
+
     // Чтение версии
     // if !tbs1.read_optional_asn1_integer(&mut cert.version, Tag(0).constructed().context_specific(), 0) {
     if !tbs1.read_optional_asn1_integer(&mut cert.version, context_specific(constructed(0u8)), 0) {
         //return Err("x509: malformed version".into());
         panic!("x509: malformed tbs certificate");
     }
+
     if cert.version < 0 {
         //return Err("x509: malformed version".into());
         panic!("x509: malformed version");
     }
 
     cert.version += 1;
+    println!("parseCertificate cert.version is : {:?}", &cert.version);
     if cert.version > 3 {
         //return Err("x509: invalid version".into());
         panic!("x509: invalid version");
@@ -796,10 +1051,9 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
     }
     //cert.serial_number = serial;
 
-    /*
     // Чтение идентификатора алгоритма подписи
     let mut sig_ai_seq = ASN1String{ 0: Vec::new()};
-    if !tbs.read_asn1(&mut sig_ai_seq, SEQUENCE) {
+    if !tbs1.read_asn1(&mut sig_ai_seq, SEQUENCE) {
         //return Err("x509: malformed signature algorithm identifier".into());
         panic!("x509: malformed signature algorithm identifier");
     }
@@ -812,24 +1066,138 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
         //return Err("x509: malformed algorithm identifier".into());
         panic!("x509: malformed algorithm identifier");
     }
-    if outer_sig_ai_seq.0.cmp(&sig_ai_seq.0).is_eq() { // if outer_sig_ai_seq != sig_ai_seq {
+    println!("parseCertificate sig_ai_seq.0 is : {:?}", &sig_ai_seq.0);
+    println!("parseCertificate outer_sig_ai_seq.0 is : {:?}", &outer_sig_ai_seq.0);
+    if outer_sig_ai_seq.0 != sig_ai_seq.0 { // if outer_sig_ai_seq != sig_ai_seq {
         //return Err("x509: inner and outer signature algorithm identifiers don't match".into());
         panic!("x509: inner and outer signature algorithm identifiers don't match");
     }
 
-    let sig_ai = parse_ai(sig_ai_seq.0)?; // Обработка идентификатора алгоритма
+    let sig_ai = parse_ai(&mut sig_ai_seq); // Обработка идентификатора алгоритма
     cert.signature_algorithm = get_signature_algorithm_from_ai(sig_ai);
+    println!("parseCertificate cert.signature_algorithm is : {:?}", &cert.signature_algorithm);
 
     // Чтение секвенции издателя
-    let issuer_seq = Vec::new();
-    if !read_asn1_element(&mut tbs, &mut issuer_seq) {
-        return Err("x509: malformed issuer".into());
+    let mut issuer_seq = ASN1String{ 0: Vec::new()};
+    if !tbs1.read_asn1_element(&mut issuer_seq, SEQUENCE) {
+        //return Err("x509: malformed issuer".into());
+        panic!("x509: malformed issuer");
     }
-    cert.raw_issuer = issuer_seq.clone();
-    let issuer_rdns = parse_name(issuer_seq)?;
-    cert.issuer.fill_from_rdn_sequence(issuer_rdns); // Предполагая, что эта функция существует
+    println!("parseCertificate issuer_seq.0 is : {:?}", &issuer_seq.0);
+    cert.raw_issuer = issuer_seq.0.clone();
+    let issuer_rdns = parse_name(&mut issuer_seq);
+    cert.issuer.fill_from_rdn_sequence(&issuer_rdns);
 
-    Ok(cert)*/
+    let mut validity = ASN1String{ 0: Vec::new()};
+	if !tbs1.read_asn1(&mut validity, SEQUENCE) {
+		panic!("x509: malformed validity");
+	}
+
+    (cert.not_before, cert.not_after) = parse_validity(& mut validity).unwrap();
+
+    println!("parseCertificate cert.not_before is : {:?}", &cert.not_before);
+    println!("parseCertificate cert.not_after is : {:?}", &cert.not_after);
+	//cert.not_before, cert.not_after, err = parseValidity(validity);
+	//if err != nil {
+		//return nil, err
+	//}
+
+    let mut subject_seq = ASN1String{ 0: Vec::new()};
+	if !tbs1.read_asn1_element(&mut subject_seq, SEQUENCE) {
+		panic!("x509: malformed issuer");
+	}
+	cert.raw_subject = subject_seq.0.clone();
+    println!("parseCertificate cert.raw_subject is : {:?}", &cert.raw_subject);
+    let subject_rdns = parse_name(&mut subject_seq);
+
+	cert.subject.fill_from_rdn_sequence(&subject_rdns);
+
+    let mut spki = ASN1String{ 0: Vec::new()};
+	if !tbs1.read_asn1_element(&mut spki, SEQUENCE) {
+		panic!("x509: malformed spki");
+	}
+	cert.raw_subject_public_key_info = spki.0.clone();
+    let mut spki1 = ASN1String{ 0: Vec::new()};
+	if !spki.read_asn1(&mut spki1, SEQUENCE) {
+		panic!("x509: malformed spki"); //return nil, errors.New("x509: malformed spki")
+	}
+	let mut pk_ai_seq = ASN1String{ 0: Vec::new()};
+	if !spki1.read_asn1(&mut pk_ai_seq, SEQUENCE) {
+		panic!("x509: malformed public key algorithm identifier");
+	}/*
+
+    let pk_ai = parse_ai(&mut pk_ai_seq);//pkAI, err := parseAI(pkAISeq)
+    //if err != nil {
+		//return nil, err
+	//}
+	cert.public_key_algorithm = getPublicKeyAlgorithmFromOID(pk_ai.algorithm);
+	let spk;//var spk asn1.BitString
+	//if !spki.ReadASN1BitString(&spk) {
+		//panic!("x509: malformed subjectPublicKey");
+	//}
+	if cert.public_key_algorithm != PublicKeyAlgorithm::UnknownPublicKeyAlgorithm {
+		//cert.PublicKey, err = parsePublicKey(&publicKeyInfo{
+			//Algorithm: pkAI,
+			//PublicKey: spk,
+		//})
+		//if err != nil {
+			//return nil, err
+		//}
+	}
+
+    if cert.version > 1 {
+        if !tbs.skip_optional_asn1(context_specific(1u8)) {
+            panic!("x509: malformed issuerUniqueID");
+        }
+        if !tbs.skip_optional_asn1(context_specific(2u8)) {
+            panic!("x509: malformed subjectUniqueID");
+        }
+
+        if cert.version == 3 {
+            let mut extensions = ASN1String{ 0: Vec::new()};
+			let mut present = false;
+            if !tbs.read_optional_asn1(&mut extensions, &mut present, context_specific(constructed(3u8))) {
+                panic!("x509: malformed extensions");
+            }
+
+            if present {
+                // seenExts := make(map[string]bool)
+                let mut extensions1 = ASN1String{ 0: Vec::new()};
+                if !extensions.read_asn1(&mut extensions1, SEQUENCE) {
+                    panic!("x509: malformed extensions");
+                }
+
+                while !extensions.0.is_empty() {
+                    let mut extension = ASN1String{ 0: Vec::new()};
+                    if !extensions.read_asn1(&mut extension, SEQUENCE) {
+                        panic!("x509: malformed extension");
+                    }
+                    //ext, err := parseExtension(extension)
+					//if err != nil {
+						//return nil, err
+					//}
+
+                    //oidStr := ext.Id.String()
+					//if seenExts[oidStr] {
+						//return nil, errors.New("x509: certificate contains duplicate extensions")
+					//}
+					//seenExts[oidStr] = true
+                    cert.extensions.append(ext);
+                }
+
+                //err = processExtensions(cert)
+				//if err != nil {
+					//return nil, err
+				//}
+            }
+        }
+    }*/
+
+    //var signature asn1.BitString
+	//if !input.ReadASN1BitString(&signature) {
+		//return nil, errors.New("x509: malformed signature")
+	//}
+	//cert.Signature = signature.RightAlign()
 
     cert
 
@@ -852,6 +1220,169 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
     //true // Обязательно замените на реальную логику
 //}
 
+#[derive(Debug, Clone)]
+struct AttributeTypeAndValue {
+    atype: Vec<i32>,
+    value: String,
+}
+
+
+//struct RDN_sequence {
+
+//};// []RelativeDistinguishedNameSET
+
+//struct RelativeDistinguishedNameSET (
+    //Vec<AttributeTypeAndValue>,
+//);
+
+
+// parseName parses a DER encoded Name as defined in RFC 5280. We may
+// want to export this function in the future for use in crypto/tls.
+pub fn parse_name(raw: &mut ASN1String) -> Vec<Vec<AttributeTypeAndValue>> { // pub fn parse_name(raw: &mut ASN1String) -> RDN_sequence {
+    //
+    let mut der = ASN1String{ 0: Vec::new()};
+    if !raw.read_asn1(&mut der, SEQUENCE) {
+        panic!("x509: invalid RDNSequence");
+    }
+
+    let mut rdn_seq: Vec<Vec<AttributeTypeAndValue>> = Vec::new(); // let mut rdn_seq: RDNSequence;
+    if !raw.0.is_empty(){
+        let mut rdn_set: Vec<AttributeTypeAndValue> = Vec::new(); // let mut rdn_set: RelativeDistinguishedNameSET;
+        let mut set = ASN1String{ 0: Vec::new()};
+        if !raw.read_asn1(&mut set, SET) {
+			//return nil, errors.New("x509: invalid RDNSequence")
+            panic!("x509: invalid RDNSequence");
+		}
+
+        while !set.0.is_empty() {
+            let mut atav = ASN1String{ 0: Vec::new()};
+            if !set.read_asn1(&mut atav, SEQUENCE) {
+                panic!("x509: invalid RDNSequence: invalid attribute");
+            }
+
+            let mut attr: AttributeTypeAndValue = AttributeTypeAndValue{atype: Vec::new(), value: String::new()};
+            if !atav.read_asn1_object_identifier(&mut attr.atype) {
+                panic!("x509: invalid RDNSequence: invalid attribute type");
+            }
+
+            let mut raw_value = ASN1String{ 0: Vec::new()};
+			let mut value_tag = 0u8;
+            if !atav.read_any_asn1(&mut raw_value, &mut value_tag) {
+                panic!("x509: invalid RDNSequence: invalid attribute value");
+            }
+
+            //(attr.Value, err) = parse_asn1_string(valueTag, rawValue);
+            //if err != nil {
+				//panic!("x509: invalid RDNSequence: invalid attribute value: %s", err);
+			//}
+            attr.value = parse_asn1_string(value_tag, &raw_value.0).expect("x509: invalid RDNSequence: invalid attribute value: %s");
+
+            rdn_set.push(attr);
+
+        }
+        rdn_seq.push(rdn_set);
+    }
+
+    return rdn_seq;
+}
+
+// pub fn parse_asn1_string(tag: u8, value: &[u8]) -> Result<String, ASN1Error> {
+pub fn parse_asn1_string(tag: u8, value: &[u8]) -> Option<String> {
+    match tag {
+        T61_STRING => Some(String::from_utf8_lossy(value).to_string()),//Ok(String::from_utf8_lossy(value).to_string()),
+        PRINTABLE_STRING => {
+            for &b in value {
+                if !is_printable(b) {
+                    return None; //return Err(ASN1Error::InvalidPrintableString);
+                }
+            }
+            Some(String::from_utf8_lossy(value).to_string()) // Ok(String::from_utf8_lossy(value).to_string())
+        }
+        UTF8_STRING => {
+            if !is_valid_utf8(&value) {
+                return None; //return Err(ASN1Error::InvalidUTF8String);
+            }
+            Some(String::from_utf8_lossy(value).to_string()) // Ok(String::from_utf8_lossy(value).to_string())
+        }
+        BMP_STRING => {
+            if value.len() % 2 != 0 {
+                return None; // return Err(ASN1Error::InvalidBMPString);
+            }
+
+            let mut decoded = Vec::new();
+            let mut iter = value.chunks_exact(2);
+            for chunk in iter {
+                let code_unit = ((chunk[0] as u16) << 8) | (chunk[1] as u16);
+                decoded.push(code_unit);
+            }
+
+            // Strip terminator if present.
+            if decoded.len() >= 2 && decoded[decoded.len() - 1] == 0 && decoded[decoded.len() - 2] == 0 {
+                decoded.pop();
+                decoded.pop();
+            }
+
+            // Convert u16 vector to String
+            match String::from_utf16(&decoded) {
+                Ok(string) => return Some(string),
+                Err(_) => return None,
+            }
+
+            //return Some(String::from_utf16(&decoded)?); // return Ok(String::from_utf16(&decoded).map_err(|_| ASN1Error::InvalidBMPString)?);
+        }
+        IA5_STRING => {
+            let s = String::from_utf8_lossy(value).to_string();
+            if is_ia5_string(&s) {
+                return None; //return Err(ASN1Error::InvalidIA5String);
+            }
+            Some(s) //Ok(s)
+        }
+        NUMERIC_STRING => {
+            for &b in value {
+                if !('0' as u8 <= b && b <= '9' as u8 || b == ' ' as u8) {
+                    return None; // return Err(ASN1Error::InvalidNumericString);
+                }
+            }
+            Some(String::from_utf8_lossy(value).to_string()) // Ok(String::from_utf8_lossy(value).to_string())
+        }
+        _ => None,//Err(ASN1Error::UnsupportedStringType),
+    }
+}
+
+// Helper functions to validate characters and UTF-8
+fn is_printable(b: u8) -> bool {
+    (b'b' >= b'a' && b <= b'z') || (b >= b'A' && b <= b'Z') ||
+    (b >= b'0' && b <= b'9') || (b >= b'\'' && b <= b')') ||
+    (b >= b'+' && b <= b'/') || b == b' ' ||
+    b == b':' || b == b'=' || b == b'?' ||
+    b == b'*' || b == b'&'
+}
+
+fn is_valid_utf8(value: &[u8]) -> bool {
+    // Fast path for ASCII
+    for &byte in value {
+        if byte >= 0x80 {
+            return false;
+        }
+    }
+    true
+}
+
+//const MAX_ASCII: char = 'u{007F}';
+
+fn is_ia5_string(s: &str) -> bool {
+    for r in s.chars() {
+        // Per RFC5280 "IA5String is limited to the set of ASCII characters"
+        if r > 127 as char { // if r > MAX_ASCII {
+            return false;
+        }
+    }
+    return true;
+}
+
+
+
+// ASN.1 types
 
 #[derive(Debug, Clone)]
 pub struct RawValue {
@@ -862,6 +1393,7 @@ pub struct RawValue {
     full_bytes: Vec<u8>, // Complete bytes including the tag and length
 }
 
+#[derive(Debug, Clone)]
 struct AlgorithmIdentifier {
     algorithm: Vec<i32>,
     parameters: Option<RawValue>
@@ -899,7 +1431,267 @@ pub fn parse_ai(der: &mut ASN1String) -> AlgorithmIdentifier {
     return AlgorithmIdentifier { algorithm, parameters: Some(parameters) }
 }
 
-pub fn check_certs(certs_chain: &[u8]) -> bool {
+fn get_signature_algorithm_from_ai(ai: AlgorithmIdentifier) -> SignatureAlgorithm {
+    if ai.algorithm == OID_SIGNATURE_ED25519.to_vec() {
+        // RFC 8410, Section 3
+		// > For all of the OIDs, the parameters MUST be absent.
+        if ai.parameters.unwrap().full_bytes.len() != 0 {
+            return SignatureAlgorithm::UnknownSignatureAlgorithm;
+        }
+    }
+
+    let signature_algorithm_details: Vec<AlgorithmDetails> = vec![
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::MD2WithRSA,
+            name: String::from("MD2-RSA"),
+            oid: OID_SIGNATURE_MD2_WITH_RSA.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: None, // no value for MD2
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::MD5WithRSA,
+            name: String::from("MD5-RSA"),
+            oid: OID_SIGNATURE_MD5_WITH_RSA.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("MD5")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::SHA1WithRSA,
+            name: String::from("SHA1-RSA"),
+            oid: OID_SIGNATURE_SHA1_WITH_RSA.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("SHA1")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::SHA256WithRSA,
+            name: String::from("SHA256-RSA"),
+            oid: OID_SIGNATURE_SHA256_WITH_RSA.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("SHA256")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::SHA384WithRSA,
+            name: String::from("SHA384-RSA"),
+            oid: OID_SIGNATURE_SHA384_WITH_RSA.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("SHA384")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::SHA512WithRSA,
+            name: String::from("SHA512-RSA"),
+            oid: OID_SIGNATURE_SHA512_WITH_RSA.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("SHA512")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::SHA256WithRSAPSS,
+            name: String::from("SHA256-RSAPSS"),
+            oid: OID_SIGNATURE_RSA_PSS.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("SHA256")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::SHA384WithRSAPSS,
+            name: String::from("SHA384-RSAPSS"),
+            oid: OID_SIGNATURE_RSA_PSS.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("SHA384")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::SHA512WithRSAPSS,
+            name: String::from("SHA512-RSAPSS"),
+            oid: OID_SIGNATURE_RSA_PSS.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("SHA512")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::DSAWithSHA1,
+            name: String::from("DSA-SHA1"),
+            oid: OID_SIGNATURE_DSA_WITH_SHA1.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::DSA,
+            hash: Some(String::from("SHA1")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::DSAWithSHA256,
+            name: String::from("DSA-SHA256"),
+            oid: OID_SIGNATURE_DSA_WITH_SHA256.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::DSA,
+            hash: Some(String::from("SHA256")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::ECDSAWithSHA1,
+            name: String::from("ECDSA-SHA1"),
+            oid: OID_SIGNATURE_ECDSA_WITH_SHA1.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::ECDSA,
+            hash: Some(String::from("SHA1")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::ECDSAWithSHA256,
+            name: String::from("ECDSA-SHA256"),
+            oid: OID_SIGNATURE_ECDSA_WITH_SHA256.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::ECDSA,
+            hash: Some(String::from("SHA256")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::ECDSAWithSHA384,
+            name: String::from("ECDSA-SHA384"),
+            oid: OID_SIGNATURE_ECDSA_WITH_SHA384.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::ECDSA,
+            hash: Some(String::from("SHA384")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::ECDSAWithSHA512,
+            name: String::from("ECDSA-SHA512"),
+            oid: OID_SIGNATURE_ECDSA_WITH_SHA512.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::ECDSA,
+            hash: Some(String::from("SHA512")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::PureEd25519,
+            name: String::from("Ed25519"),
+            oid: OID_SIGNATURE_ED25519.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::Ed25519,
+            hash: Some(String::from("")),
+        },
+    ];
+
+    if ai.algorithm != OID_SIGNATURE_RSA_PSS.to_vec() {
+        for details in signature_algorithm_details {
+            if ai.algorithm == details.oid {
+                return details.algo;
+            }
+        }
+        return SignatureAlgorithm::UnknownSignatureAlgorithm;
+    }
+
+    // RSA PSS is special because it encodes important parameters
+	// in the Parameters.
+    //let params: PssParameters;
+    //if unmarshal(ai.parameters.full_bytes, &params){
+        //return SignatureAlgorithm::UnknownSignatureAlgorithm;
+    //}
+
+    //let mgf1_hash_func: AlgorithmIdentifier;
+    //if unmarshal(params.mgf.parameters.full_bytes, &mgf1_hash_func){
+        //return SignatureAlgorithm::UnknownSignatureAlgorithm;
+    //}
+
+    // PSS is greatly overburdened with options. This code forces them into
+	// three buckets by requiring that the MGF1 hash function always match the
+	// message hash function (as recommended in RFC 3447, Section 8.1), that the
+	// salt length matches the hash length, and that the trailer field has the
+	// default value.
+
+    //if (!params.hash.parameters.unwrap().full_bytes.is_empty() && !params.hash.parameters.unwrap().full_bytes.to_vec()==NullBytes.to_vec() ) ||
+		//params.mgf.algorithm != oidMGF1 ||
+		//mgf1_hash_func.algorithm != params.hash.algorithm ||
+        //( mgf1_hash_func.parameters.unwrap().full_bytes.len() != 0 && mgf1_hash_func.parameters.unwrap().full_bytes != NullBytes ) ||
+		//params.TrailerField != 1 {
+		//return SignatureAlgorithm::UnknownSignatureAlgorithm;
+	//}
+
+    //match (params.hash.algorithm, params.salt_length) {
+        //(OID_SHA256, 32) => SignatureAlgorithm::SHA256WithRSAPSS,
+        //(OID_SHA384, 48) => SignatureAlgorithm::SHA384WithRSAPSS,
+        //(OID_SHA512, 64) => SignatureAlgorithm::SHA512WithRSAPSS,
+        //_ => SignatureAlgorithm::UnknownSignatureAlgorithm,
+    //}
+
+    return SignatureAlgorithm::UnknownSignatureAlgorithm;
+}
+
+/*
+pub fn unmarshal(b: &[u8], val: &mut dyn std::any::Any) -> Option<&[u8]> {
+    unmarshal_with_params(b, val, "")
+}
+
+pub fn unmarshal_with_params(b: &[u8], val: &mut dyn std::any::Any, params: &str) -> Option<&[u8]> {
+    //let v = val.downcast_mut::<&mut dyn std::any::Any>()
+        //.ok_or(InvalidUnmarshalError { typ: std::any::TypeId::of::<&mut dyn std::any::Any>() })?;
+
+    let (offset, rest) = parse_field(val, b, 0, parse_field_parameters(params))?;
+    Some(&b[offset..])
+}
+
+fn parse_field(v: &mut dyn std::any::Any, bytes: &[u8], init_offset: usize, params: FieldParameters) -> Option<(usize, &[u8])> {
+    let mut offset = init_offset;
+
+    if offset == bytes.len() {
+        if !set_default_value(v, &params) {
+            //return Err(SyntaxError { message: "sequence truncated" });
+        }
+        return Some((offset, bytes));//return Ok((offset, bytes));
+    }
+
+    // Handle the ANY type.
+    if let Some(iface) = v.downcast_ref::<&dyn std::any::Any>() {
+        let (t, new_offset, err) = parse_tag_and_length(bytes, offset)?;
+        if err.is_some() {
+            return None; // return Err(err.unwrap());
+        }
+
+        // Check length and parse according to tag
+        if is_invalid_length(new_offset, t.length, bytes.len()) {
+            return None; //return Err(SyntaxError { message: "data truncated" });
+        }
+
+        let inner_bytes = &bytes[new_offset..new_offset + t.length];
+        let result: Box<dyn std::any::Any> = match t.tag {
+            Tag::PrintableString => parse_printable_string(inner_bytes)?,
+            Tag::NumericString => parse_numeric_string(inner_bytes)?,
+            Tag::IA5String => parse_ia5_string(inner_bytes)?,
+            Tag::T61String => parse_t61_string(inner_bytes)?,
+            Tag::UTF8String => parse_utf8_string(inner_bytes)?,
+            Tag::Integer => parse_int64(inner_bytes)?,
+            Tag::BitString => parse_bit_string(inner_bytes)?,
+            Tag::OID => parse_object_identifier(inner_bytes)?,
+            Tag::UTCTime => parse_utc_time(inner_bytes)?,
+            Tag::GeneralizedTime => parse_generalized_time(inner_bytes)?,
+            Tag::OctetString => inner_bytes.to_vec().into_boxed_slice(),
+            Tag::BMPString => parse_bmp_string(inner_bytes)?,
+            _ => Box::new(()), // Unknown type handling
+        };
+
+        // Update the reference
+        mem::swap(v, &mut result);
+        offset += t.length;
+        return Some((offset, bytes));//Ok((offset, bytes));
+    }
+
+    // Normal case; parse according to the ASN.1 rules
+    let (t, new_offset, err) = parse_tag_and_length(bytes, offset)?;
+    if err.is_some() {
+        return None;//return Err(err.unwrap());
+    }
+
+    Some((offset, bytes))
+}*/
+
+// fn parse_validity(der: &mut ASN1String) -> Option<(u64, u64)> {
+fn parse_validity(der: &mut ASN1String) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
+	let not_before = parse_time(der);
+	if not_before.is_none() {
+		return None
+	}
+	let not_after = parse_time(der);
+	if not_after.is_none() {
+		return None;
+	}
+
+	return Some((not_before.unwrap(), not_after.unwrap()));
+}
+
+fn parse_time(der: &mut ASN1String) -> Option<DateTime<Utc> > {
+    if der.peek_asn1_tag(TagUTCTime) {
+        der.read_asn1_utc_time()
+    } else if der.peek_asn1_tag(TagGeneralizedTime) {
+        der.read_asn1_generalized_time()
+    } else {
+        None//Err("Unsupported time format".to_string())
+    }
+}
+
+pub fn check_certs(current_time: i64, certs_chain: &[u8], root_cert: &[u8]) -> bool {
     // extract
     // divide input string into three slices
     println!("check_certs certs_chain is : {:?}", &certs_chain);
@@ -1067,12 +1859,13 @@ fn test_parsing_root_cert_from_inet(){
     let certificate = parse_certificate(&cert_bytes);
 
     println!("the certificate.version is : {:?}", &certificate.version);
-    println!("the certificate.serial_number is : {:?}", &certificate.serial_number);
+    println!("the certificate.serial_number is : {:?}", &certificate.serial_number.to_string());
 
     // lenOfRootCert is : 1382
-    let certificate_version: i64 = 2;
+    let certificate_version: i64 = 3;
     assert_eq!(certificate.version, certificate_version);
-    let cert_serial_number = BigInt(159159747900478145820483398898491642637);
+    // let cert_serial_number = BigInt(159159747900478145820483398898491642637);
+    let cert_serial_number = BigInt::from_str("159159747900478145820483398898491642637").unwrap();
     assert_eq!(certificate.serial_number, cert_serial_number);
     //let cert_issuer = Name{}; // CN=GlobalSign Root CA,OU=Root CA,O=GlobalSign nv-sa,C=BE
     //certificate.issuer = CN=GlobalSign Root CA,OU=Root CA,O=GlobalSign nv-sa,C=BE

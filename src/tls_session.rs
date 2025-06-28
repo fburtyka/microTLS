@@ -239,7 +239,9 @@ impl Session {
         let certs_chain_len = (certs_chain[0] as usize)*65536 + (certs_chain[1] as usize)*256 + (certs_chain[2] as usize);
         println!("certs_chain_len is : {:?}", &certs_chain_len); // must be 4205 = 4096 + 109
 
-        if !check_certs(&certs_chain[4..certs_chain_len+1]) {
+        let current_timestamp = 1000i64;// SystemTime::now()
+        let root_cert = get_root_cert_from_online();
+        if !check_certs(current_timestamp, &certs_chain[4..certs_chain_len+1], &root_cert) {
             //panic(err.Error())
             println!("error in certificates chain !");
             return false;
@@ -599,7 +601,9 @@ impl Session {
         let certs_chain_len = (certs_chain[0] as usize)*65536 + (certs_chain[1] as usize)*256 + (certs_chain[2] as usize);
         println!("certs_chain_len is : {:?}", &certs_chain_len); // must be 4205 = 4096 + 109
 
-        if !check_certs(&certs_chain[4..certs_chain_len+1]) {
+        let current_timestamp = 1000i64;// SystemTime::now()
+        let root_cert = get_root_cert_from_online();
+        if !check_certs(current_timestamp, &certs_chain[4..certs_chain_len+1], &root_cert) {
             return false; // "error in certificates chain !"
         }
 
@@ -643,17 +647,20 @@ impl Session {
 
 }
 
-pub fn extract_json_public_keys_from_tls(raw: Vec<u8>) -> Vec<u8> {
-    let kid = &raw[..20];
-    let certificate_len = (256*raw[20] as u16 + raw[21] as u16) as usize;
+pub fn extract_json_public_key_from_tls(raw: Vec<u8>) -> Vec<u8> {
+    let timestamp_bytes = &raw[..4];
+    let kid = &raw[4..24];
+    let certificate_len = (256*raw[24] as u16 + raw[25] as u16) as usize;
     println!("certificate_len is : {:?}", &certificate_len);
 
-    let certificate = &raw[22..22+certificate_len];
-    let data = &raw[22+certificate_len..];
+    let external_root_cert = &raw[26..26+certificate_len];
+    let data = &raw[26+certificate_len..];
 
     // the first output byte indicates the success of the process: if it equals to 1 then success
     // then follows the public keys from json
     // if the first bytes equals to 0 then unsuccess and the error code follows
+    let timestamp_shortened = aes256gcm::uint32(&timestamp_bytes);
+    let timestamp = timestamp_shortened as i64;
     let private_key:[u8;32] = data[0..32].try_into().unwrap();
     println!("private_key is : {:?}", &private_key);
     let records_send: u8 = data[32];
@@ -771,15 +778,26 @@ pub fn extract_json_public_keys_from_tls(raw: Vec<u8>) -> Vec<u8> {
     let certs_chain_len = (certs_chain[0] as usize)*65536 + (certs_chain[1] as usize)*256 + (certs_chain[2] as usize);
     println!("certs_chain_len is : {:?}", &certs_chain_len); // must be 4205 = 4096 + 109
 
-    if !check_certs(&certs_chain[4..certs_chain_len+1]) {
+    if !check_certs(timestamp, &certs_chain[4..certs_chain_len+1], &external_root_cert) {
         return vec![0u8, 3u8, 37u8]; // "error in certificates chain !"
     }
 
     // =================== begin check application request ===================
     let domain = "www.googleapis.com";
-    let req = format!("GET /oauth2/v3/certs HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n", domain);
-    // req.as_bytes()
+    let etalon_req = format!("GET /oauth2/v3/certs HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n", domain);
+    let etalon_req_bytes = etalon_req.as_bytes();
+    //encrypt etalon application request
+    let mut data_vec = etalon_req_bytes.to_vec();
+    data_vec.push(0x17);
+    let additional_length = (data_vec.len() + 16) as u16;
+    let additional = format::concatenate(&[
+        &[0x17, 0x03, 0x03], &format::u16_to_bytes(additional_length)
+    ]);
+    let etalon_encrypted = encrypt(&client_application_key, &client_application_iv, &data_vec[..], &additional[..]);
     // match with application_request
+    if application_request.to_vec() != etalon_encrypted {
+        return vec![0u8, 3u8, 38u8]; // "incorrect application request !"
+    }
 
     // =================== begin decryption ticket and check =========================
 
@@ -795,7 +813,7 @@ pub fn extract_json_public_keys_from_tls(raw: Vec<u8>) -> Vec<u8> {
     iv[11] ^= records_received;
 
     let mut plaintext = decrypt(&server_application_key, &iv.try_into().unwrap(), &http_response[..len_of_first_packet]);
-    println!("decrypted app plaintext is : {:?}", &plaintext);
+    //println!("decrypted app plaintext is : {:?}", &plaintext);
     //println!("{}", String::from_utf8_lossy(&plaintext));
 
     // Увеличиваем количество полученных записей
@@ -808,8 +826,8 @@ pub fn extract_json_public_keys_from_tls(raw: Vec<u8>) -> Vec<u8> {
     let mut plaintext2 = decrypt(&server_application_key, &iv2.try_into().unwrap(), &http_response[len_of_first_packet..]);
 
     plaintext.append(&mut plaintext2);
-    println!("decrypted app plaintext2 is : {:?}", &plaintext2);
-    println!("{}", String::from_utf8_lossy(&plaintext));
+    //println!("decrypted app plaintext2 is : {:?}", &plaintext2);
+    //println!("{}", String::from_utf8_lossy(&plaintext));
 
     let plaintext_as_string = String::from_utf8_lossy(&plaintext).to_string();
 
@@ -909,7 +927,7 @@ fn cc_encrypt_test_with_data_from_go(){
     println!("ciphertext is : {:?}", ciphertext);
 
     assert_eq!(ciphertext[..], etalon_ciphertext);
-}*/
+}
 
 #[test]
 fn test_check_serialized(){
@@ -993,4 +1011,4 @@ fn test_check_serialized(){
 
     let check_result = Session::check_serialized_session(serialized_tls.to_vec());
     assert_eq!(check_result, true);
-}
+}*/
