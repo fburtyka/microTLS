@@ -428,7 +428,7 @@ impl Session {
         let mut data_vec = data.to_vec();
         println!("encrypt_application_data data.len() is : {:?}", &data.len());
         data_vec.push(0x17);
-        let additional_length = (data.len() + 16) as u16;
+        let additional_length = (data_vec.len() + 16) as u16;
         let additional = format::concatenate(&[
             &[0x17, 0x03, 0x03], &format::u16_to_bytes(additional_length)
         ]);

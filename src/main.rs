@@ -110,9 +110,9 @@ fn get(domain: &str) {
     let ticket = session.receive_data(); // let _ = session.receive_data(); // ignore the session ticket
     println!("ticket is : {:?}", ticket);
     println!("ReceiveData done");
-    session.receive_http_response(); // let resp = session.receive_http_response().expect("Failed to receive HTTP response")
-    //println!("ReceiveHTTPResponse done");
-    //println!("{}", String::from_utf8_lossy(&resp));
+    let resp = session.receive_http_response(); // let resp = session.receive_http_response().expect("Failed to receive HTTP response")
+    println!("ReceiveHTTPResponse done");
+    println!("{}", String::from_utf8_lossy(&resp));
     let serialized_session = session.serialize();
     println!("serialized_session is : {:?}", serialized_session);
 }

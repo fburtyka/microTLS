@@ -1124,13 +1124,13 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
 	let mut pk_ai_seq = ASN1String{ 0: Vec::new()};
 	if !spki1.read_asn1(&mut pk_ai_seq, SEQUENCE) {
 		panic!("x509: malformed public key algorithm identifier");
-	}/*
+	}
 
     let pk_ai = parse_ai(&mut pk_ai_seq);//pkAI, err := parseAI(pkAISeq)
     //if err != nil {
 		//return nil, err
 	//}
-	cert.public_key_algorithm = getPublicKeyAlgorithmFromOID(pk_ai.algorithm);
+	cert.public_key_algorithm = get_public_key_algorithm_from_oid(&pk_ai.algorithm);/*
 	let spk;//var spk asn1.BitString
 	//if !spki.ReadASN1BitString(&spk) {
 		//panic!("x509: malformed subjectPublicKey");
@@ -1600,6 +1600,39 @@ fn get_signature_algorithm_from_ai(ai: AlgorithmIdentifier) -> SignatureAlgorith
     return SignatureAlgorithm::UnknownSignatureAlgorithm;
 }
 
+// RFC 3279, 2.3 Public Key Algorithms
+//
+//	pkcs-1 OBJECT IDENTIFIER ::== { iso(1) member-body(2) us(840)
+//		rsadsi(113549) pkcs(1) 1 }
+//
+// rsaEncryption OBJECT IDENTIFIER ::== { pkcs1-1 1 }
+//
+//	id-dsa OBJECT IDENTIFIER ::== { iso(1) member-body(2) us(840)
+//		x9-57(10040) x9cm(4) 1 }
+const	OID_PUBLIC_KEY_RSA: [i32; 7] = [1, 2, 840, 113549, 1, 1, 1];
+const	OID_PUBLIC_KEY_DSA: [i32; 6] = [1, 2, 840, 10040, 4, 1];
+// RFC 5480, 2.1.1 Unrestricted Algorithm Identifier and Parameters
+//
+//	id-ecPublicKey OBJECT IDENTIFIER ::= {
+//		iso(1) member-body(2) us(840) ansi-X9-62(10045) keyType(2) 1 }
+const	OID_PUBLIC_KEY_ECDSA: [i32; 6] = [1, 2, 840, 10045, 2, 1];
+// RFC 8410, Section 3
+//
+//	id-X25519    OBJECT IDENTIFIER ::= { 1 3 101 110 }
+//	id-Ed25519   OBJECT IDENTIFIER ::= { 1 3 101 112 }
+const	OID_PUBLIC_KEY_X25519: [i32; 4]  = [1, 3, 101, 110];
+const	OID_PUBLIC_KEY_ED25519: [i32; 4] = [1, 3, 101, 112];
+
+fn get_public_key_algorithm_from_oid(oid: &Vec<i32>) -> PublicKeyAlgorithm {
+    let oid_slice = oid.as_slice();
+    match oid_slice {
+        val if val==OID_PUBLIC_KEY_RSA.as_slice() => PublicKeyAlgorithm::RSA,
+        val if val==OID_PUBLIC_KEY_DSA.as_slice() => PublicKeyAlgorithm::DSA,
+        val if val==OID_PUBLIC_KEY_ECDSA.as_slice() => PublicKeyAlgorithm::ECDSA,
+        val if val==OID_PUBLIC_KEY_ED25519.as_slice() => PublicKeyAlgorithm::Ed25519,
+        _ => PublicKeyAlgorithm::UnknownPublicKeyAlgorithm,
+    }
+}
 /*
 pub fn unmarshal(b: &[u8], val: &mut dyn std::any::Any) -> Option<&[u8]> {
     unmarshal_with_params(b, val, "")
