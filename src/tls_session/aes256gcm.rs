@@ -625,12 +625,9 @@ impl Aes256Cipher {
     //
     pub fn new(key: &[u8;16]) -> Aes256Cipher {
 
-		println!("the initial key is : {:?}", &key);
 		let mut enc = [0u32; 44];
 		let mut dec = [0u32; 44];
 		expand_key(key, &mut enc, &mut dec);
-		//println!("enc key is : {:?}", &enc);
-		//println!("dec key is : {:?}", &dec);
 
         return Aes256Cipher {
             enc,
@@ -775,9 +772,7 @@ impl Gcm {
 
 		let mut zero = [0u8; GCM_BLOCK_SIZE];
         let mut key = [0u8; GCM_BLOCK_SIZE];
-		println!("key is : {:?}", &key);
         cipher.encrypt(&mut key, &zero);
-		println!("after cipher.Encrypt key is : {:?}", &key);
 
         let mut g = Gcm {
             cipher,

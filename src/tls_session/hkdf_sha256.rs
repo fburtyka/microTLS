@@ -143,11 +143,9 @@ impl Digest {
         }
 
         b.extend_from_slice(&self.x[..self.nx]);
-        //println!("from marshal_binary b is : {:?}", b);
         //b.truncate(b.len() + self.x.len() - self.nx); // уже нулевой
         b.resize(b.len() + self.x.len() - self.nx, 0); // // уже нулевой
         append_uint64(&mut b, self.len);
-        //println!("from marshal_binary 2 b is : {:?}", b);
 
         Ok(b)
     }
@@ -178,10 +176,7 @@ impl Digest {
         self.x[..copied].copy_from_slice(&b[..copied]);
         b = &b[copied..];
 
-        println!("unmarshaled b is : {:?}", &b);
         self.len = consume_uint64(&mut b); // self.len = consume_uint64(&mut b)?;
-        println!("unmarshaled self.len is : {:?}", &self.len);
-        println!("unmarshaled b is : {:?}", &b);
         self.nx = (self.len % (CHUNK as u64)) as usize;
 
         //Ok(())
@@ -231,7 +226,6 @@ impl Digest {
     pub fn write(&mut self, p: &[u8]) -> usize {
         let nn = p.len();
         self.len += nn as u64;
-        //println!("p is : {:?}", &p);
 
         let mut remaining = p;// Оставшиеся данные для записи
 
@@ -244,8 +238,6 @@ impl Digest {
                 //let selfx = &self.x.clone();//[0u8;CHUNK];
                 // Обработка полного блока
                 block(self, &self.x.clone()); // block(self, &self.x);
-                //println!("self.x is : {:?}", &self.x);
-                //println!("self.h is : {:?}", &self.h);
                 self.nx = 0;
             }
             remaining = &remaining[n..];
@@ -253,16 +245,13 @@ impl Digest {
 
         if remaining.len() >= CHUNK {
             let n = remaining.len() & ! (CHUNK - 1);
-            //println!("n is : {:?}", n);
             block(self, &remaining[..n]);
-            //println!("remaining[..n] is : {:?}", &remaining[..n]);
             remaining = &remaining[n..];
         }
 
         if !remaining.is_empty() {
             self.nx = remaining.len();
             self.x[..self.nx].copy_from_slice(remaining);
-            //println!("куьфштштп self.x is : {:?}", &self.x);
         }
 
         nn // (nn, None)
@@ -272,7 +261,6 @@ impl Digest {
         // Сделаем копию self, чтобы вызывающая сторона могла продолжать писать и суммировать.
         let mut d0 = self.clone();
         let hash = d0.check_sum(); // Важно: вам нужно реализовать метод check_sum
-        //println!("hash sum is : {:?}", hash);
         //if d0.is224 {
             //[in_bytes, &hash[..SIZE_224]].concat()
         //} else {
@@ -294,7 +282,6 @@ impl Digest {
         };
 
         let len_in_bits = len << 3;
-        //println!("check_sum 2 len is : {:?}", len_in_bits);
         let padlen = &mut tmp[..(t as usize) + 8];
 
         put_uint64(&mut padlen[(t as usize)..], len_in_bits);
@@ -306,7 +293,6 @@ impl Digest {
 
         let mut digest = [0u8; SIZE];
 
-        //println!("self.h[0] is : {:?}", self.h[0]);
         put_uint32(&mut digest[0..4], self.h[0]);
         put_uint32(&mut digest[4..8], self.h[1]);
         put_uint32(&mut digest[8..12], self.h[2]);
@@ -456,8 +442,6 @@ impl Hmac {
             *byte ^= 0x5c;
         }
         hmac.inner.write(&hmac.ipad);
-        //println!("hmac.ipad : {:?}", &hmac.ipad);
-        //println!("hmac.opad : {:?}", &hmac.opad);
 
         hmac
     }
@@ -468,8 +452,6 @@ impl Hmac {
         result.extend_from_slice(&self.inner.sum(input));
 
         if self.marshaled {
-            println!("self.marshaled ");
-            println!("self.opad is : {:?}", self.opad);
             self.outer.unmarshal_binary(&self.opad); // self.outer = self.outer.unmarshal_binary(&self.opad);
         } else {
             self.outer.reset();
@@ -478,7 +460,6 @@ impl Hmac {
 
         self.outer.write(&result[orig_len..]);
         let result = self.outer.sum(&result[..orig_len]);
-        //println!("result 2 is : {:?}", result);
         result
     }
 
@@ -496,9 +477,6 @@ impl Hmac {
     }
 
     pub fn reset(&mut self) {
-
-        println!("before reset self.ipad is : {:?}", &self.ipad);
-        println!("before reset self.opad is : {:?}", &self.opad);
 
         if self.marshaled {
             //if let Err(err) = self.inner.unmarshal_binary(&self.ipad) {
@@ -522,8 +500,6 @@ impl Hmac {
                 self.marshaled = true;
             }
         }
-        println!("after reset self.ipad is : {:?}", &self.ipad);
-        println!("after reset self.opad is : {:?}", &self.opad);
     }
 
     // Функция для сравнения двух HMAC
@@ -597,9 +573,7 @@ impl Hkdf {
             self.expander.write(&self.info);//self.expander.update(&self.info);
             self.expander.write(&[self.counter]);//self.expander.update(&[self.counter]);
 
-            println!("&self.prev is : {:?}", &self.prev[..]);
             self.prev = self.expander.sum(&self.prev[..]);//self.prev = self.expander.finalize_reset().into_bytes().to_vec();
-            println!("&self.prev[..] is : {:?}", &self.prev[..]);
             self.counter += 1;
 
             // Copy the new batch into p

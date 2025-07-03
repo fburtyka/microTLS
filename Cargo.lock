@@ -150,6 +150,8 @@ dependencies = [
  "chrono",
  "hex",
  "num-bigint",
+ "num-integer",
+ "num-traits",
  "rand",
  "rand_core",
 ]

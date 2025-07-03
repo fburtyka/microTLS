@@ -1,3 +1,11 @@
+mod rsa;
+mod ecdsa;
+mod ed25519;
+
+///mod hkdf_sha256;
+
+use crate::tls_session::hkdf_sha256;
+
 //use core::slice::SlicePattern;
 use std::net;
 use std::ops::AddAssign;
@@ -9,6 +17,9 @@ use num_bigint::{BigInt, ToBigInt, Sign};
 //use num_traits::One;
 use std::iter::FromIterator;
 use std::str::FromStr;
+
+use std::collections::{hash_map, HashMap};
+//use crate::tls_session::certs::PublicKey::{ECDSA_PUBLIC_KEY, ED25519_PUBLIC_KEY, X25519_PUBLIC_KEY};
 
 // ASN.1 objects have metadata preceding them:
 //   the tag: the type of the object
@@ -170,7 +181,7 @@ const DSA: u16 = 2; // Only supported for parsing.
 const ECDSA: u16 = 3;
 const Ed25519: u16 = 4;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum PublicKeyAlgorithm {
     UnknownPublicKeyAlgorithm = 0,
     RSA = 1,
@@ -280,11 +291,66 @@ pub const GENERALIZED_TIME: u8 = 24u8;
 pub const GENERAL_STRING: u8 = 27u8;
 pub const BMP_STRING: u8 = 30u8;
 
+struct BitString {
+    pub bytes: Vec<u8>,
+    pub bit_length: usize,
+}
+
+impl BitString {
+
+    // at returns the bit at the given index. If the index is out of range it
+    // returns 0.
+    pub fn at(&self, i: usize) -> u8 {
+        if i >= self.bit_length {
+            return 0u8;
+        }
+        let x = i / 8;
+        let y = 7 - (i%8) as u8;
+        (self.bytes[x]>>y) & 1
+    }
+
+    // right_align returns a slice where the padding bits are at the beginning. The
+    // slice may share memory with the BitString.
+    pub fn right_align(&self) -> Vec<u8> {
+        let shift = (8 - (self.bit_length % 8)) as u8;
+        if shift == 8 || self.bytes.is_empty() {
+            return self.bytes.clone();
+        }
+
+        let mut a = vec![0u8; self.bytes.len()];
+        a[0] = self.bytes[0] >> shift;
+        for i in 1..self.bytes.len() {
+            a[i] = self.bytes[i-1] << (8 - shift);
+            a[i] |= self.bytes[i] >> shift;
+        }
+        return a;
+    }
+}
+
 // Предполагается, что String - это структура, которая обрабатывает данные ASN.1
 #[derive(Debug, Clone)]
 pub struct ASN1String(Vec<u8>); // Используется Vec<u8> для представления строки
 
 impl ASN1String {
+
+    pub fn read_asn1_bitstring(&mut self, out: &mut BitString) -> bool {
+        let mut bytes = ASN1String{ 0: Vec::new()};
+        if !self.read_asn1(&mut bytes, BIT_STRING) || bytes.0.is_empty() || bytes.0.len()*8/8 != bytes.0.len() {
+            return false;
+        }
+
+        let padding_bits = bytes.0[0];
+        bytes.0 = bytes.0[1..].to_vec();
+
+        if padding_bits > 7 ||
+		bytes.0.is_empty() && padding_bits != 0 ||
+		bytes.0.len() > 0 && (bytes.0[bytes.0.len()-1] & (((1<<padding_bits) as i8 - 1i8) != 0i8) as u8) != 0u8 {
+            return false;
+        }
+        out.bit_length = (bytes.0.len()*8) as usize - (padding_bits as usize);
+        out.bytes = bytes.0;
+        return true
+    }
 
 
     pub fn read_asn1(&mut self, out: &mut ASN1String, tag: u8) -> bool {
@@ -381,6 +447,22 @@ impl ASN1String {
         }
 
         true
+    }
+
+    // read_asn1_boolean decodes an ASN.1 BOOLEAN and converts it to a boolean
+    // representation into out and advances. It reports whether the read
+    // was successful.
+    fn read_asn1_boolean(&mut self, out: &mut bool) -> bool {
+        let mut bytes = ASN1String{0: Vec::new()};
+        if !self.read_asn1(&mut bytes, BOOLEAN) || bytes.0.len() != 1 {
+            return false;
+        }
+        match bytes.0[0] {
+            0 => *out = false,
+            0xff => *out = true,
+            _ => return false,
+        }
+        return true;
     }
 
     pub fn read_asn1_i64(&mut self, out: &mut i64) -> bool {
@@ -558,8 +640,6 @@ impl ASN1String {
         }
         false // усеченные данные
     }
-
-
 
     pub fn read_asn1_impl(&mut self, out: &mut ASN1String, out_tag: &mut u8, skip_header: bool) -> bool {
         if self.0.len() < 2 {
@@ -879,7 +959,7 @@ struct Certificate {
     signature: Vec<u8>,
     signature_algorithm: SignatureAlgorithm,
     public_key_algorithm: PublicKeyAlgorithm,
-    //public_key: Option<Box<dyn PublicKey>>,    // Using trait object for dynamic dispatch
+    public_key: PublicKey,    // Using trait object for dynamic dispatch
 
     version: i64,
     serial_number: BigInt,     // serial_number: Option<BigInt>,          // Type for big integers
@@ -898,13 +978,10 @@ struct Certificate {
 
     basic_constraints_valid: bool,              // Indicates if BasicConstraints are valid
     is_ca: bool,
-
     max_path_len: i32,                         // MaxPathLen for BasicConstraints
     max_path_len_zero: bool,                   // Indicates if MaxPathLen is explicitly zero
-
     subject_key_id: Vec<u8>,
     authority_key_id: Vec<u8>,
-
     ocsp_server: Vec<String>,                   // Authority Information Access
     issuing_certificate_url: Vec<String>,
 
@@ -939,7 +1016,7 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
         signature: Vec::new(),
         signature_algorithm: SignatureAlgorithm::UnknownSignatureAlgorithm, // Default value
         public_key_algorithm: PublicKeyAlgorithm::UnknownPublicKeyAlgorithm, // Default value
-        //public_key: None,
+        public_key: PublicKey::UnknownPubicKey,
         version: 0,
         serial_number: BigInt::default(),
         issuer: Name::default(), // Assuming a default implementation
@@ -992,7 +1069,7 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
         //return Err("x509: malformed certificate".into());
         panic!("x509: malformed certificate");
     }
-    println!("parseCertificate input after read_asn1_element is : {:?}", &input1);
+    //println!("parseCertificate input after read_asn1_element is : {:?}", &input1);
     cert.raw = input1.0.clone();
 
     // Чтение основного элемента ASN.1
@@ -1000,7 +1077,7 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
         //return Err("x509: malformed certificate".into());
         panic!("x509: malformed certificate");
     }
-    println!("parseCertificate input after read_asn1 is : {:?}", &input);
+    //println!("parseCertificate input after read_asn1 is : {:?}", &input);
 
     let mut tbs = ASN1String{ 0: Vec::new()}; // Подходящий тип для tbs
 
@@ -1008,7 +1085,7 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
         //return Err("x509: malformed tbs certificate".into());
         panic!("x509: malformed tbs certificate");
     }
-    println!("parseCertificate tbs after read_asn1 is : {:?}", &tbs);
+    //println!("parseCertificate tbs after read_asn1 is : {:?}", &tbs);
     cert.raw_tbs_certificate = tbs.0.clone();
 
     let mut tbs1 = tbs.clone();
@@ -1017,8 +1094,7 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
         panic!("x509: malformed tbs certificate");
     }
 
-    println!("parseCertificate tbs1 after read_asn1 is : {:?}", &tbs1);
-
+    //println!("parseCertificate tbs1 after read_asn1 is : {:?}", &tbs1);
 
     // Чтение версии
     // if !tbs1.read_optional_asn1_integer(&mut cert.version, Tag(0).constructed().context_specific(), 0) {
@@ -1130,12 +1206,18 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
     //if err != nil {
 		//return nil, err
 	//}
-	cert.public_key_algorithm = get_public_key_algorithm_from_oid(&pk_ai.algorithm);/*
-	let spk;//var spk asn1.BitString
-	//if !spki.ReadASN1BitString(&spk) {
-		//panic!("x509: malformed subjectPublicKey");
-	//}
+	cert.public_key_algorithm = get_public_key_algorithm_from_oid(&pk_ai.algorithm);
+    println!("parseCertificate cert.public_key_algorithm is : {:?}", &cert.public_key_algorithm);
+	let mut spk = BitString{bytes: Vec::new(), bit_length: 0};//var spk asn1.BitString
+	if !spki1.read_asn1_bitstring(&mut spk) {
+		panic!("x509: malformed subjectPublicKey");
+	}
+    println!("parseCertificate cert.public_key_algorithm 1214 string");
 	if cert.public_key_algorithm != PublicKeyAlgorithm::UnknownPublicKeyAlgorithm {
+
+        println!("parseCertificate cert.public_key_algorithm cert.public_key_algorithm != PublicKeyAlgorithm::UnknownPublicKeyAlgorithm");
+        let public_key_info = PublicKeyInfo{algorithm: pk_ai, publicKey: spk};
+        cert.public_key = parse_public_key(&public_key_info);
 		//cert.PublicKey, err = parsePublicKey(&publicKeyInfo{
 			//Algorithm: pkAI,
 			//PublicKey: spk,
@@ -1144,24 +1226,26 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
 			//return nil, err
 		//}
 	}
+    println!("parseCertificate cert.public_key_algorithm 1228 string");
 
+    /*
     if cert.version > 1 {
-        if !tbs.skip_optional_asn1(context_specific(1u8)) {
+        if !tbs1.skip_optional_asn1(context_specific(1u8)) {
             panic!("x509: malformed issuerUniqueID");
         }
-        if !tbs.skip_optional_asn1(context_specific(2u8)) {
+        if !tbs1.skip_optional_asn1(context_specific(2u8)) {
             panic!("x509: malformed subjectUniqueID");
         }
 
         if cert.version == 3 {
             let mut extensions = ASN1String{ 0: Vec::new()};
 			let mut present = false;
-            if !tbs.read_optional_asn1(&mut extensions, &mut present, context_specific(constructed(3u8))) {
+            if !tbs1.read_optional_asn1(&mut extensions, &mut present, context_specific(constructed(3u8))) {
                 panic!("x509: malformed extensions");
             }
 
             if present {
-                // seenExts := make(map[string]bool)
+                let mut seen_exts: HashMap<String, bool> = HashMap::new(); // seenExts := make(map[string]bool)
                 let mut extensions1 = ASN1String{ 0: Vec::new()};
                 if !extensions.read_asn1(&mut extensions1, SEQUENCE) {
                     panic!("x509: malformed extensions");
@@ -1172,17 +1256,20 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
                     if !extensions.read_asn1(&mut extension, SEQUENCE) {
                         panic!("x509: malformed extension");
                     }
-                    //ext, err := parseExtension(extension)
+                    let ext = parse_extension(&mut extension); //ext, err := parseExtension(extension)
 					//if err != nil {
 						//return nil, err
 					//}
 
-                    //oidStr := ext.Id.String()
+                    let oid_str = to_oid_string(&ext.id); //oidStr := ext.Id.String()
+                    if *seen_exts.get(&oid_str).unwrap() {
+                        panic!("x509: certificate contains duplicate extensions");
+                    }
 					//if seenExts[oidStr] {
 						//return nil, errors.New("x509: certificate contains duplicate extensions")
 					//}
-					//seenExts[oidStr] = true
-                    cert.extensions.append(ext);
+					seen_exts.insert(oid_str, true); //seenExts[oidStr] = true
+                    cert.extensions.push(ext);
                 }
 
                 //err = processExtensions(cert)
@@ -1193,32 +1280,30 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
         }
     }*/
 
-    //var signature asn1.BitString
-	//if !input.ReadASN1BitString(&signature) {
-		//return nil, errors.New("x509: malformed signature")
-	//}
-	//cert.Signature = signature.RightAlign()
+    let mut signature = BitString{ bytes: vec![], bit_length: 0 } ;
+	if !input.read_asn1_bitstring(&mut signature) {
+		panic!("x509: malformed signature");
+	}
+    cert.signature = signature.right_align();
 
     cert
 
 }
 
-// Пример реализации функций чтения ASN.1
-//fn read_asn1_element(input: &mut Vec<u8>) -> bool {
-    // Здесь будет логика обработки ASN.1 элементов
-    //true // Обязательно замените на реальную логику
-//}
+fn to_oid_string(data: &Vec<i32>) -> String{
+    let mut s = String::new();
+    let mut first = true;
 
-//fn read_asn1(input: &mut Vec<u8>) -> bool {
-    // Здесь будет логика обработки ASN.1
-    //true // Обязательно замените на реальную логику
-//}
+    for &v in data.iter() {
+        if !first {
+            s.push('.');
+        }
+        s.push_str(&v.to_string());
+        first = false;
+    }
+    s
+}
 
-//fn read_optional_asn1_integer(input: &mut Vec<u8>, version: &mut i32```rust
-//) -> bool {
-    // Здесь будет логика чтения необязательного ASN.1 целого числа
-    //true // Обязательно замените на реальную логику
-//}
 
 #[derive(Debug, Clone)]
 struct AttributeTypeAndValue {
@@ -1724,7 +1809,166 @@ fn parse_time(der: &mut ASN1String) -> Option<DateTime<Utc> > {
     }
 }
 
-pub fn check_certs(current_time: i64, certs_chain: &[u8], root_cert: &[u8]) -> bool {
+fn parse_extension(der: &mut ASN1String) -> Extension { // fn parse_extension(der: &mut ASN1String) -> (pkix.Extension, error) {
+	let mut ext: Extension = Extension{ id: vec![], critical: None, value: vec![] };
+	if !der.read_asn1_object_identifier(&mut ext.id) {
+		panic!("x509: malformed extension OID field");
+	}
+    let mut ext_critical = false;
+	if der.peek_asn1_tag(BOOLEAN) {
+		if !der.read_asn1_boolean(&mut ext_critical) {
+			panic!("x509: malformed extension critical field");
+		}
+        ext.critical = Some(ext_critical);
+	}
+    let mut val = ASN1String{ 0: Vec::new()};
+	if !der.read_asn1(&mut val, OCTET_STRING) {
+		panic!("x509: malformed extension value field");
+	}
+	ext.value = val.0;
+	return ext;
+}
+
+struct PublicKeyInfo {
+	//raw:       Vec<u8>,
+	algorithm: AlgorithmIdentifier,
+	publicKey: BitString,
+}
+
+#[derive(Debug)]
+enum PublicKey {
+    RsaPublicKey(rsa::PublicKey),
+    ECDSAPublicKey(ecdsa::PublicKey),
+    ED25519PublicKey(ed25519::PublicKey),
+    X25519PublicKey,
+    DsaPublicKey,
+    UnknownPubicKey
+}
+
+// RFC 5480, 2.1.1.1. Named Curve
+//
+//	secp224r1 OBJECT IDENTIFIER ::= {
+//	  iso(1) identified-organization(3) certicom(132) curve(0) 33 }
+//
+//	secp256r1 OBJECT IDENTIFIER ::= {
+//	  iso(1) member-body(2) us(840) ansi-X9-62(10045) curves(3)
+//	  prime(1) 7 }
+//
+//	secp384r1 OBJECT IDENTIFIER ::= {
+//	  iso(1) identified-organization(3) certicom(132) curve(0) 34 }
+//
+//	secp521r1 OBJECT IDENTIFIER ::= {
+//	  iso(1) identified-organization(3) certicom(132) curve(0) 35 }
+//
+// NB: secp256r1 is equivalent to prime256v1
+const OID_NAMED_CURVE_P224: [i32;5] = [1, 3, 132, 0, 33];
+const OID_NAMED_CURVE_P256: [i32;7] = [1, 2, 840, 10045, 3, 1, 7];
+const OID_NAMED_CURVE_P384: [i32;5] = [1, 3, 132, 0, 34];
+const OID_NAMED_CURVE_P521: [i32;5] = [1, 3, 132, 0, 35];
+
+
+fn named_curve_from_oid(oid: &Vec<i32>) -> Option<ecdsa::Curve> {
+
+    match oid.as_slice() {
+        val if val==OID_NAMED_CURVE_P224.as_slice() => Some(ecdsa::p224()),
+        val if val==OID_NAMED_CURVE_P256.as_slice() => Some(ecdsa::p256()),
+        val if val==OID_NAMED_CURVE_P384.as_slice() => Some(ecdsa::p384()),
+        val if val==OID_NAMED_CURVE_P521.as_slice() => Some(ecdsa::p521()),
+        _ => None,
+    }
+	//switch {
+	//case oid.Equal(oidNamedCurveP224):
+		//return elliptic.P224()
+	//case oid.Equal(oidNamedCurveP256):
+		//return elliptic.P256()
+	//case oid.Equal(oidNamedCurveP384):
+		//return elliptic.P384()
+	//case oid.Equal(oidNamedCurveP521):
+		//return elliptic.P521()
+	//}
+	//return nil
+}
+
+fn parse_public_key(key_data: &PublicKeyInfo) -> PublicKey {
+    let oid = &key_data.algorithm.algorithm;
+	let params = key_data.algorithm.parameters.clone().unwrap().clone();
+    let mut der = ASN1String{ 0: key_data.publicKey.right_align()}; // der = cryptobyte.String(key_data.publicKey.right_align() );
+    match oid.as_slice() {
+        val if val==OID_PUBLIC_KEY_RSA.as_slice() => {
+            // RSA public keys must have a NULL in the parameters.
+            // See RFC 3279, Section 2.3.1.
+            if params.full_bytes != NullBytes.to_vec() {
+                panic!("x509: RSA key missing NULL parameters");
+            }
+
+            let mut p = rsa::PublicKey{n: BigInt::from(0), e: 0i64};
+            let mut der1 = ASN1String{ 0: Vec::new()};
+            if !der.read_asn1(&mut der1, SEQUENCE) {
+                panic!("x509: invalid RSA public key");
+            }
+
+            match der1.read_asn1_big_int() {
+                Some(big_int) => p.n = big_int,
+                None => panic!("x509: invalid RSA modulus"),
+            }
+
+            if !der1.read_asn1_i64(&mut p.e) {
+                panic!("x509: invalid RSA public exponent");
+            }
+
+            if p.n.sign() == Sign::Minus {
+                panic!("x509: RSA modulus is not a positive number");
+            }
+            if p.e <= 0i64 {
+                panic!("x509: RSA public exponent is not a positive number");
+            }
+
+            return PublicKey::RsaPublicKey((p));
+        },
+        val if val==OID_PUBLIC_KEY_ECDSA.as_slice() => {
+            let mut params_der = ASN1String{ 0: params.full_bytes.clone()};// cryptobyte.String(params.FullBytes)
+            let mut named_curve_oid: Vec<i32> = Vec::new();
+            if !params_der.read_asn1_object_identifier(&mut named_curve_oid) {
+                panic!("x509: invalid ECDSA parameters");
+            }
+            //let named_curve = named_curve_from_oid(&named_curve_oid);
+            match named_curve_from_oid(&named_curve_oid) {
+                Some(named_curve) => {
+                    //
+                    let (x, y) : (BigInt, BigInt) = ecdsa::unmarshal(&named_curve, &der.0);
+                    //if x == nil {
+                        //panic!("x509: failed to unmarshal elliptic curve point");
+                    //}
+                    PublicKey::ECDSAPublicKey(ecdsa::PublicKey{curve: named_curve, x, y})
+                },
+                None => panic!("x509: unsupported elliptic curve"),
+            }
+        },
+        val if val==OID_PUBLIC_KEY_ED25519.as_slice() => {
+            // RFC 8410, Section 3
+            // > For all of the OIDs, the parameters MUST be absent.
+            if !params.full_bytes.is_empty() {
+                panic!("x509: Ed25519 key encoded with illegal parameters");
+            }
+            if der.0.len() != ed25519::PUBLIC_KEY_SIZE {
+                panic!("x509: wrong Ed25519 public key size");
+            }
+
+            PublicKey::ED25519PublicKey(ed25519::PublicKey(der.0))
+        },
+        val if val==OID_PUBLIC_KEY_X25519.as_slice() => {
+            //
+            PublicKey::X25519PublicKey
+        },
+        val if val==OID_PUBLIC_KEY_DSA.as_slice() => {
+            //
+            PublicKey::DsaPublicKey
+        },
+        _ => panic!("x509: unknown public key algorithm"),
+    }
+}
+
+pub fn check_certs(current_time: i64, check_sum: &[u8], certs_chain: &[u8], signature: &[u8], root_cert: &[u8]) -> bool {
     // extract
     // divide input string into three slices
     println!("check_certs certs_chain is : {:?}", &certs_chain);
@@ -1775,11 +2019,63 @@ pub fn check_certs(current_time: i64, certs_chain: &[u8], root_cert: &[u8]) -> b
     let root_cert_slice = &certs_chain[start_index + 3..start_index + len_of_root_cert+3];
     println!("check_certs root_cert_slice is : {:?}", root_cert_slice);
 
+    let root_cert = parse_certificate(root_cert_slice);
     //rootCert, err := x509.ParseCertificate(rootCertSlice)
     // if err != nil {
     // fmt.Printf("ParseCertificate (rootCertSlice) err is : %v\n", err.Error())
     // return false
     // }
+
+    //err = leafCert.CheckSignatureFrom(internalCert);
+    // if err!= nil {
+    // fmt.Printf("ParseCertificate CheckSignatureFrom internalCert err is : %v\n", err.Error())
+    // return false
+    // }
+
+    // err = internalCert.CheckSignatureFrom(rootCert)
+    //   if err!= nil {
+    //     fmt.Printf("ParseCertificate CheckSignatureFrom rootCert err is : %v\n", err.Error())
+    //     return false
+    //   }
+
+    match  leaf_cert.public_key_algorithm.to_string() {
+        val if val=="RSA".to_string() => {
+            //
+            // pubkey, ok := leafCert.PublicKey.(*rsa.PublicKey)
+            if let PublicKey::RsaPublicKey(pub_key) = leaf_cert.public_key {
+                //
+                if !rsa::verify_pkcs1v15(&pub_key,256, check_sum, signature) {
+                    return false;
+                }
+            } else {
+                return false; //ErrCertificateTypeMismatch
+            }
+
+        },
+        val if val == "ECDSA".to_string() => {
+            //
+            if let PublicKey::ECDSAPublicKey(pub_key) = leaf_cert.public_key {
+                //
+                let len_of_r = signature[3] as usize;//     lenOfr := signature[3]
+                //println!("len_of_r is : {:?}", len_of_r);
+                let r_data = &signature[4..4+len_of_r];//     rData := signature[4:4+lenOfr]
+                let len_of_s = signature[4 + len_of_r + 1] as usize;
+                //println!("len_of_s is : {:?}", len_of_s);
+                let s_data = &signature[4 + len_of_r + 2..4 + len_of_r + 2 + len_of_s];
+                let r = BigInt::from_bytes_be(Sign::Plus, r_data); //     r := new(big.Int).SetBytes(rData)
+                let s = BigInt::from_bytes_be(Sign::Plus, s_data); //     s := new(big.Int).SetBytes(sData)
+                if !ecdsa::verify(&pub_key, check_sum, &r, &s) {
+                    return false;
+                }
+
+            } else {
+                return false;  //ErrCertificateTypeMismatch
+            }
+
+        },
+        _ => panic!("Unknown signature algorithm"),
+    }
+
 
     return true;
 }
@@ -1893,17 +2189,17 @@ fn test_parsing_root_cert_from_inet(){
 
     println!("the certificate.version is : {:?}", &certificate.version);
     println!("the certificate.serial_number is : {:?}", &certificate.serial_number.to_string());
+    println!("the certificate.issuer.names is : {:?}", &certificate.issuer.names);
 
     // lenOfRootCert is : 1382
     let certificate_version: i64 = 3;
     assert_eq!(certificate.version, certificate_version);
-    // let cert_serial_number = BigInt(159159747900478145820483398898491642637);
     let cert_serial_number = BigInt::from_str("159159747900478145820483398898491642637").unwrap();
     assert_eq!(certificate.serial_number, cert_serial_number);
     //let cert_issuer = Name{}; // CN=GlobalSign Root CA,OU=Root CA,O=GlobalSign nv-sa,C=BE
     //certificate.issuer = CN=GlobalSign Root CA,OU=Root CA,O=GlobalSign nv-sa,C=BE
 
-    //rootCert.PublicKeyAlgorithm is : RSA
+    assert_eq!(certificate.public_key_algorithm, PublicKeyAlgorithm::RSA); //rootCert.PublicKeyAlgorithm is : RSA
     // rootCert.PublicKey is : &{742766292573789461138430713106656498577482106105452767343211753017973550878861638590047246174848574634573720584492944669558785810905825702100325794803983120697401526210439826606874730300903862093323398754125584892080731234772626570955922576399434033022944334623029747454371697865218999618129768679013891932765999545116374192173968985738129135224425889467654431372779943313524100225335793262665132039441111162352797240438393795570253671786791600672076401253164614309929080014895216439462173458352253266568535919120175826866378039177020829725517356783703110010084715777806343235841345264684364598708732655710904078855499605447884872767583987312177520332134164321746982952420498393591583416464199126272682424674947720461866762624768163777784559646117979893432692133818266724658906066075396922419161138847526583266030290937955148683298741803605463007526904924936746018546134099068479370078440023459839544052468222048449819089106832452146002755336956394669648596035188293917750838002531358091511944112847917218550963597247358780879029417872466325821996717925086546502702016501643824750668459565101211439428003662613442032518886622942136328590823063627643918273848803884791311375697313014431195473178892344923166262358299334827234064598421 65537}
 }
 
