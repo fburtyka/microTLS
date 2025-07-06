@@ -120,7 +120,7 @@ fn put_uint64(b: &mut [u8], v: u64) {
 }
 
 #[derive(Clone)]
-struct Digest {
+pub struct Digest {
     h: [u32; 8],
     x: [u8; CHUNK],
     nx: usize,

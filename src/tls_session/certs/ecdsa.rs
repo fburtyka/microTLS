@@ -47,8 +47,8 @@ impl Curve {
     }
 
     pub fn is_on_curve(&self, x: &BigInt, y: &BigInt) -> bool {
-        if matches_specific_curve(self).is_some() {
-            return matches_specific_curve(self).unwrap().is_on_curve(x, y);
+        if !matches_specific_curve(self).is_some() {
+            return false; // return matches_specific_curve(self).unwrap().is_on_curve(x, y);
         }
 
         if x < &BigInt::zero() || x >= &self.p || y < &BigInt::zero() || y >= &self.p { // if x < &0 || x >= &self.p || y < &0 || y >= &self.p {
@@ -245,6 +245,25 @@ impl Curve {
         self.scalar_mult(&self.gx, &self.gy, k)
     }
 
+    /*pub fn point_from_affine(&self, x: &BigUint, y: &BigUint) -> Option<Point> {
+        // Отклоняем значения, которые не могут быть корректно закодированы.
+        if x.is_negative() || y.is_negative() {
+            return None; // Err("negative coordinate".into());
+        }
+
+        if x.bits() > self.bit_size || y.bits() > self.bit_size {
+            return None ; // Err("overflowing coordinate".into());
+        }
+
+        // Кодируем координаты и позволяем SetBytes отклонять невалидные точки.
+        let byte_len = (&self.bit_size + 7) / 8;
+        let mut buf = vec![0u8; 1 + 2 * byte_len];
+        buf[0] = 4; // некомпрессированная точка
+        buf[1..1 + byte_len].copy_from_slice(&x.to_bytes_le());
+
+        buf[1 + byte_len..1 + 2 * byte_len].copy_from_slice(&y.to_bytes_le());
+        Some(self.new_point().set_bytes(&buf))
+    }*/
 
 }
 
@@ -474,7 +493,7 @@ fn hash_to_int(hash: &[u8], c: &Curve) -> BigInt {
     ret
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct PublicKey {
     pub curve: Curve,
     pub x: BigInt,

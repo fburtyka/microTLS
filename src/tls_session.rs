@@ -76,8 +76,8 @@ pub fn key_pair() -> Keys {
     let private_key = [231, 226, 189, 128, 175, 192, 46, 233, 160, 243, 227, 168, 186, 174, 207, 111, 124, 21, 6, 220, 18, 155, 18, 17, 39, 165, 203, 108, 109, 3, 40, 186];
     let basepoint:[u8;32] = [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     let public_key = curve25519_donna(&private_key, &basepoint);
-    println!("private_key {:?}", private_key);
-    println!("public_key {:?}", public_key);
+    //println!("private_key {:?}", private_key);
+    //println!("public_key {:?}", public_key);
 
     Keys {
         public: public_key, // public_key.compress().to_bytes().to_vec(),
@@ -107,7 +107,6 @@ fn decrypt(key: &[u8;16], iv: &[u8;12], wrapper: &[u8]) -> Vec<u8> {
     let ciphertext = &wrapper[5..];
 
     let plaintext = aes_gcm.open(&[], iv, ciphertext, additional);
-    println!("plaintext is : {:?}", plaintext);
     return plaintext;
 }
 
@@ -130,28 +129,25 @@ pub fn hkdf_expand_label(secret: &[u8;32], label: &str, context: &[u8], length: 
     hkdf_label.push((tls13_prefix.len()+label.as_bytes().len()) as u8);
     hkdf_label.extend_from_slice(tls13_prefix);
     hkdf_label.extend_from_slice(label.as_bytes());
-    println!("hkdf_label after label add is : {:?}", hkdf_label);
 
     hkdf_label.push(context.len() as u8);
     hkdf_label.extend_from_slice(context);
 
-    println!("hkdf_label is : {:?}", hkdf_label);
-    println!("secret is : {:?}", &secret);
+    //println!("hkdf_label is : {:?}", hkdf_label);
+    //println!("secret is : {:?}", &secret);
 
     // Expand using HKDF
     let mut reader = hkdf_sha256::expand(secret, &hkdf_label[..]);//let hkdf = Hkdf::<Sha256>::new(Some(secret), &hkdf_label);
-    println!("length is : {:?}", length);
     let buf = reader.read(length as usize);
-    println!("hkdf expand result is is : {:?}", &buf);
+    //println!("hkdf expand result is is : {:?}", &buf);
 
     buf
 }
 
 pub fn derive_secret(secret: &[u8;32], label: &str, transcript_messages: &[u8]) -> [u8; 32] {
 
-    println!("derive_secret transcript_messages is : {:?}", &transcript_messages);
     let hash = hkdf_sha256::sum256( transcript_messages);
-    println!("derive_secret hash is : {:?}", &hash);
+    //println!("derive_secret hash is : {:?}", &hash);
     let secret = hkdf_expand_label(secret, label, &hash, 32);
     secret.try_into().unwrap()
 
@@ -238,11 +234,11 @@ impl Session {
             return false;
         }
 
-        println!("self.keys.server_handshake_key is : {:?}", &self.keys.server_handshake_key);
-        println!("self.keys.server_handshake_iv is : {:?}", &self.keys.server_handshake_iv);
-        println!("record.0[..] is : {:?}", &record.0[..]);
+        //println!("self.keys.server_handshake_key is : {:?}", &self.keys.server_handshake_key);
+        //println!("self.keys.server_handshake_iv is : {:?}", &self.keys.server_handshake_iv);
+        //println!("record.0[..] is : {:?}", &record.0[..]);
         let server_handshake_message = decrypt(&self.keys.server_handshake_key, &self.keys.server_handshake_iv, &record.0[..]);
-        println!("server_handshake_message is : {:?}", &server_handshake_message);
+        //println!("server_handshake_message is : {:?}", &server_handshake_message);
         self.messages.server_handshake = DecryptedRecord{ 0: server_handshake_message};
         //format::PrintByteArray(session.Messages.ServerHandshake)
 
@@ -329,8 +325,6 @@ impl Session {
 
         let additional = [0x17, 0x03, 0x03, 0x00, 0x35];
 
-        println!("client_handshake_finished_msg msg is : {:?}", &msg);
-
         // Шифруем сообщение
         let encrypted = encrypt(
             &self.keys.client_handshake_key,
@@ -338,7 +332,6 @@ impl Session {
             &msg,
             &additional,
         );
-        println!("client_handshake_finished_msg encrypted is : {:?}", &encrypted);
 
         encrypted
     }
@@ -347,26 +340,23 @@ impl Session {
         let zeros = [0u8; 32];
         let psk = [0u8; 32]; // Предполагается, что psk инициализируется где-то
 
-        println!("self.keys.private is : {:?}", &self.keys.private);
         //self.server_hello.public_key=[246, 48, 130, 234, 125, 96, 179, 219, 52, 226, 168, 235, 57, 47, 53, 103, 96, 246, 129, 101, 202, 83, 142, 117, 64, 20, 47, 242, 241, 212, 56, 30];
         //println!("&self.server_hello.public_key is : {:?}", &self.server_hello.public_key);
         let shared_secret = curve25519_donna(&self.keys.private, &self.server_hello.public_key); //let shared_secret = X25519::from_slice(&self.keys.private).mul(&self.server_hello.public_key);
-        println!("shared_secret is : {:?}", shared_secret);
+        //println!("shared_secret is : {:?}", shared_secret);
 
         // Хэндшейк с использованием HKDF
         let early_secret = hkdf_sha256::extract(&zeros,&psk); //let (early_secret, hkdf) = Hkdf::<Sha256>::extract(Some(&zeros), &psk);
-
-        println!("early_secret is : {:?}", early_secret);
         let derived_secret = derive_secret(&early_secret, "derived", &[]);
-        println!("derived_secret is : {:?}", derived_secret);
+        //println!("derived_secret is : {:?}", derived_secret);
         self.keys.handshake_secret = hkdf_sha256::extract(&shared_secret, &derived_secret);//self.keys.handshake_secret = Hkdf::<Sha256>::extract(Some(&shared_secret), &derived_secret);
-        println!("self.keys.handshake_secret is : {:?}", self.keys.handshake_secret);
+        //println!("self.keys.handshake_secret is : {:?}", self.keys.handshake_secret);
 
         let handshake_messages = format::concatenate(
             &[&self.messages.client_hello.contents(),
             &self.messages.server_hello.contents()]
         );
-        println!("handshake_messages is : {:?}", handshake_messages);
+        //println!("handshake_messages is : {:?}", handshake_messages);
         //let handshake_messages = vec![1, 0, 0, 157, 3, 3, 27, 126, 189, 42, 117, 227, 85, 44, 186, 155, 29, 86, 176, 221, 181, 209, 227, 24, 67, 227, 112, 232, 244, 106, 59, 250, 1, 175, 102, 253, 52, 236, 0, 0, 2, 19, 1, 1, 0, 0, 114, 0, 0, 0, 23, 0, 21, 0, 0, 18, 119, 119, 119, 46, 103, 111, 111, 103, 108, 101, 97, 112, 105, 115, 46, 99, 111, 109,
                                       //0, 10, 0, 4, 0, 2, 0, 29, 0, 13, 0, 20, 0, 18, 4, 3, 8, 4, 4, 1, 5, 3, 8, 5, 5, 1, 8, 6, 6, 1, 2, 1, 0, 51, 0, 38, 0, 36, 0, 29, 0, 32, 192, 66, 56, 95, 6, 86, 129, 217, 28, 232, 5, 177, 109, 189, 139, 154, 6, 3, 215, 62, 202, 195, 214, 238, 231, 82, 157, 198, 107, 200, 81, 16, 0, 45, 0, 2, 1, 1, 0, 43, 0, 3, 2, 3, 4, 2, 0, 0, 86, 3, 3, 8, 215, 19, 207, 58, 155, 125, 3, 157, 121, 43, 159, 152, 229, 77, 159, 41, 50, 150, 5, 171, 174, 144, 47, 121, 11, 241, 132, 255, 77, 16, 244, 0, 19, 1, 0, 0, 46, 0, 51, 0, 36, 0, 29, 0, 32, 246, 48, 130, 234, 125, 96, 179, 219, 52, 226, 168, 235, 57, 47, 53, 103, 96, 246, 129, 101, 202, 83, 142, 117, 64, 20, 47, 242, 241, 212, 56, 30, 0, 43, 0, 2, 3, 4];
 
@@ -380,7 +370,6 @@ impl Session {
         let s_hs_secret = derive_secret(&self.keys.handshake_secret, "s hs traffic", &handshake_messages);
         //let session_keys_server_handshake_key = hkdf_expand_label(&s_hs_secret, "key", &[], 16);
         //println!("session_keys_server_handshake_key_ is : {:?}", &session_keys_server_handshake_key);
-        println!("s_hs_secret is : {:?}", s_hs_secret);
         self.keys.server_handshake_key = hkdf_expand_label(&s_hs_secret, "key", &[], 16).try_into().unwrap();
         self.keys.server_handshake_iv = hkdf_expand_label(&s_hs_secret, "iv", &[], 12).try_into().unwrap();
     }

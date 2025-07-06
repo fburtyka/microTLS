@@ -8,7 +8,7 @@ use crate::tls_session::hkdf_sha256;
 
 //use core::slice::SlicePattern;
 use std::net;
-use std::ops::AddAssign;
+use std::ops::{AddAssign, Deref};
 //use std::time::SystemTime;
 use chrono::{DateTime, Utc, TimeZone, ParseError};
 use std::ops::Neg;
@@ -61,7 +61,7 @@ const ClassPrivate: u16         = 3;
 // NullBytes contains bytes representing the DER-encoded ASN.1 NULL type.
 const NullBytes: [u8; 2] = [TagNull, 0];
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum SignatureAlgorithm {
     UnknownSignatureAlgorithm = 0,
     MD2WithRSA = 1,   // Unsupported.
@@ -99,6 +99,17 @@ const SHA256WithRSAPSS: u16 = 13;
 const SHA384WithRSAPSS: u16 = 14;
 const SHA512WithRSAPSS: u16 = 15;
 const PureEd25519: u16 = 16;*/
+
+impl SignatureAlgorithm {
+    fn is_rsa_pss(&self) -> bool {
+        match self {
+            SignatureAlgorithm::SHA256WithRSAPSS => true,
+            SignatureAlgorithm::SHA384WithRSAPSS => true,
+            SignatureAlgorithm::SHA512WithRSAPSS => true,
+            _ => false,
+        }
+    }
+}
 
 pub const ROOT_CERT_FROM_ONLINE: [u8; 1382] = [48, 130, 5, 98, 48, 130, 4, 74, 160, 3, 2, 1, 2, 2, 16, 119, 189, 13, 108, 219, 54, 249, 26, 234, 33, 15, 196, 240,
         88, 211, 13, 48, 13, 6, 9, 42, 134, 72, 134, 247, 13, 1, 1, 11, 5, 0, 48, 87, 49, 11, 48, 9, 6, 3, 85, 4, 6, 19, 2, 66, 69, 49, 25, 48, 23,
@@ -211,6 +222,41 @@ struct AlgorithmDetails {
     hash: Option<String>, // Можно использовать String для хеш-алгоритма
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct KeyUsage(i32);
+
+impl KeyUsage {
+    pub const DIGITAL_SIGNATURE: KeyUsage = KeyUsage(1 << 0);
+    pub const CONTENT_COMMITMENT: KeyUsage = KeyUsage(1 << 1);
+    pub const KEY_ENCIPHERMENT: KeyUsage = KeyUsage(1 << 2);
+    pub const DATA_ENCIPHERMENT: KeyUsage = KeyUsage(1 << 3);
+    pub const KEY_AGREEMENT: KeyUsage = KeyUsage(1 << 4);
+    pub const CERT_SIGN: KeyUsage = KeyUsage(1 << 5);
+    pub const CRL_SIGN: KeyUsage = KeyUsage(1 << 6);
+    pub const ENCIPHER_ONLY: KeyUsage = KeyUsage(1 << 7);
+    pub const DECIPHER_ONLY: KeyUsage = KeyUsage(1 << 8);
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ExtKeyUsage(i32);
+
+impl ExtKeyUsage {
+    pub const ANY: ExtKeyUsage = ExtKeyUsage(0);
+    pub const SERVER_AUTH: ExtKeyUsage = ExtKeyUsage(1);
+    pub const CLIENT_AUTH: ExtKeyUsage = ExtKeyUsage(2);
+    pub const CODE_SIGNING: ExtKeyUsage = ExtKeyUsage(3);
+    pub const EMAIL_PROTECTION: ExtKeyUsage = ExtKeyUsage(4);
+    pub const IPSEC_END_SYSTEM: ExtKeyUsage = ExtKeyUsage(5);
+    pub const IPSEC_TUNNEL: ExtKeyUsage = ExtKeyUsage(6);
+    pub const IPSEC_USER: ExtKeyUsage = ExtKeyUsage(7);
+    pub const TIME_STAMPING: ExtKeyUsage = ExtKeyUsage(8);
+    pub const OCSP_SIGNING: ExtKeyUsage = ExtKeyUsage(9);
+    pub const MICROSOFT_SERVER_GATED_CRYPTO: ExtKeyUsage = ExtKeyUsage(10);
+    pub const NETSCAPE_SERVER_GATED_CRYPTO: ExtKeyUsage = ExtKeyUsage(11);
+    pub const MICROSOFT_COMMERCIAL_CODE_SIGNING: ExtKeyUsage = ExtKeyUsage(12);
+    pub const MICROSOFT_KERNEL_CODE_SIGNING: ExtKeyUsage = ExtKeyUsage(13);
+}
+
 
 #[derive(Debug)]
 pub struct PssParameters {
@@ -221,6 +267,8 @@ pub struct PssParameters {
     pub salt_length: i32,
     pub trailer_field: Option<i32>, // Опциональное поле с значением по умолчанию 1
 }
+
+
 
 // Tag represents an ASN.1 identifier octet, consisting of a tag number
 // (indicating a type) and class (such as context-specific or constructed).
@@ -967,13 +1015,13 @@ struct Certificate {
     subject: Name,
     not_before: DateTime<Utc>,//i64,//SystemTime,                    // Using SystemTime for time representation
     not_after: DateTime<Utc>,//i64,//SystemTime,
-    //key_usage: KeyUsage,
+    key_usage: KeyUsage,
 
     extensions: Vec<Extension>,          // Raw X.509 extensions
     extra_extensions: Vec<Extension>,    // Extensions to be copied raw into any marshaled certificates
     //unhandled_critical_extensions: Vec<asn1::ObjectIdentifier>, // List of extension IDs not fully processed
 
-    //ext_key_usage: Vec<ExtKeyUsage>,           // Sequence of extended key usages
+    ext_key_usage: Vec<ExtKeyUsage>,           // Sequence of extended key usages
     unknown_ext_key_usage: Vec<Vec<i32>>,//unknown_ext_key_usage: Vec<asn1::ObjectIdentifier>, // Encountered extended key usages unknown to this package
 
     basic_constraints_valid: bool,              // Indicates if BasicConstraints are valid
@@ -1005,6 +1053,245 @@ struct Certificate {
     //policies: Vec<OID>, // Assuming OID is defined
 }
 
+impl Certificate {
+    //
+    fn check_signature_from(&mut self, parent: &Certificate) -> bool { // fn (c *Certificate) Check_signature_from(parent *Certificate) error
+        // RFC 5280, 4.2.1.9:
+        // "If the basic constraints extension is not present in a version 3
+        // certificate, or the extension is present but the cA boolean is not
+        // asserted, then the certified public key MUST NOT be used to verify
+        // certificate signatures."
+        if parent.version == 3 && !parent.basic_constraints_valid ||
+		parent.basic_constraints_valid && !parent.is_ca {
+            return false; //return ConstraintViolationError{}
+        }
+
+        if parent.key_usage.0 != 0 && parent.key_usage.0 & KeyUsage::CERT_SIGN.0 == 0 {
+            return false; // return ConstraintViolationError{}
+        }
+
+        if parent.public_key_algorithm == PublicKeyAlgorithm::UnknownPublicKeyAlgorithm {
+            return false; //return ErrUnsupportedAlgorithm
+        }
+
+        // return checkSignature(c.SignatureAlgorithm, c.RawTBSCertificate, c.Signature, parent.PublicKey, false);
+        return check_signature(&self.signature_algorithm, &self.raw_tbs_certificate, &self.signature, &parent.public_key, false);
+    }
+}
+
+// CheckSignature verifies that signature is a valid signature over signed from
+// c's public key.
+//
+// This is a low-level API that performs no validity checks on the certificate.
+//
+// [MD5WithRSA] signatures are rejected, while [SHA1WithRSA] and [ECDSAWithSHA1]
+// signatures are currently accepted.
+fn check_signature(algo: &SignatureAlgorithm, signed: &Vec<u8>, signature: &Vec<u8>, public_key: &PublicKey, allow_SHA1: bool) -> bool {
+
+    let signature_algorithm_details: Vec<AlgorithmDetails> = vec![
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::MD2WithRSA,
+            name: String::from("MD2-RSA"),
+            oid: OID_SIGNATURE_MD2_WITH_RSA.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: None, // no value for MD2
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::MD5WithRSA,
+            name: String::from("MD5-RSA"),
+            oid: OID_SIGNATURE_MD5_WITH_RSA.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("MD5")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::SHA1WithRSA,
+            name: String::from("SHA1-RSA"),
+            oid: OID_SIGNATURE_SHA1_WITH_RSA.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("SHA1")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::SHA256WithRSA,
+            name: String::from("SHA256-RSA"),
+            oid: OID_SIGNATURE_SHA256_WITH_RSA.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("SHA256")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::SHA384WithRSA,
+            name: String::from("SHA384-RSA"),
+            oid: OID_SIGNATURE_SHA384_WITH_RSA.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("SHA384")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::SHA512WithRSA,
+            name: String::from("SHA512-RSA"),
+            oid: OID_SIGNATURE_SHA512_WITH_RSA.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("SHA512")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::SHA256WithRSAPSS,
+            name: String::from("SHA256-RSAPSS"),
+            oid: OID_SIGNATURE_RSA_PSS.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("SHA256")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::SHA384WithRSAPSS,
+            name: String::from("SHA384-RSAPSS"),
+            oid: OID_SIGNATURE_RSA_PSS.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("SHA384")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::SHA512WithRSAPSS,
+            name: String::from("SHA512-RSAPSS"),
+            oid: OID_SIGNATURE_RSA_PSS.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::RSA,
+            hash: Some(String::from("SHA512")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::DSAWithSHA1,
+            name: String::from("DSA-SHA1"),
+            oid: OID_SIGNATURE_DSA_WITH_SHA1.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::DSA,
+            hash: Some(String::from("SHA1")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::DSAWithSHA256,
+            name: String::from("DSA-SHA256"),
+            oid: OID_SIGNATURE_DSA_WITH_SHA256.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::DSA,
+            hash: Some(String::from("SHA256")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::ECDSAWithSHA1,
+            name: String::from("ECDSA-SHA1"),
+            oid: OID_SIGNATURE_ECDSA_WITH_SHA1.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::ECDSA,
+            hash: Some(String::from("SHA1")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::ECDSAWithSHA256,
+            name: String::from("ECDSA-SHA256"),
+            oid: OID_SIGNATURE_ECDSA_WITH_SHA256.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::ECDSA,
+            hash: Some(String::from("SHA256")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::ECDSAWithSHA384,
+            name: String::from("ECDSA-SHA384"),
+            oid: OID_SIGNATURE_ECDSA_WITH_SHA384.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::ECDSA,
+            hash: Some(String::from("SHA384")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::ECDSAWithSHA512,
+            name: String::from("ECDSA-SHA512"),
+            oid: OID_SIGNATURE_ECDSA_WITH_SHA512.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::ECDSA,
+            hash: Some(String::from("SHA512")),
+        },
+        AlgorithmDetails {
+            algo: SignatureAlgorithm::PureEd25519,
+            name: String::from("Ed25519"),
+            oid: OID_SIGNATURE_ED25519.to_vec(),
+            pub_key_algo: PublicKeyAlgorithm::Ed25519,
+            hash: Some(String::from("")),
+        },
+    ];
+
+    let mut hash_type = None;
+	let mut pub_key_algo = PublicKeyAlgorithm::UnknownPublicKeyAlgorithm;
+
+    for details in signature_algorithm_details {
+        if details.algo == *algo {
+            hash_type = details.hash;
+            pub_key_algo = details.pub_key_algo;
+            break;
+        }
+    }
+
+    //match hash_type.unwrap() {
+        //"MD5" => ... ,
+        //"SHA1" => ... ,
+        //_ => ... ,
+    //}
+
+    match public_key {
+        PublicKey::RsaPublicKey(rsa_pub_key) => {
+            if pub_key_algo != PublicKeyAlgorithm::RSA {
+                return false; // signaturePublicKeyAlgoMismatchError(pubKeyAlgo, pub)
+            }
+            if algo.is_rsa_pss() {
+                let pss_options = rsa::PSSOptions{salt_length: rsa::PSSSaltLengthEqualsHash, hash: 0 };
+                return rsa::verify_pss(rsa_pub_key, 256, signed, signature, &pss_options);
+            } else {
+                // return rsa::verify_pkcs1v15(rsa_pub_key, hash_type, signed, signature);
+                return rsa::verify_pkcs1v15(rsa_pub_key, 256, signed, signature);
+            }
+        },
+        PublicKey::ECDSAPublicKey(ecdsa_pub_key) => {
+            if pub_key_algo != PublicKeyAlgorithm::ECDSA {
+                return false;
+            }
+            if !ecdsa_verify_asn1(ecdsa_pub_key, signed, signature) {
+                return false; // "x509: ECDSA verification failure")
+            }
+            return true;
+        },
+        PublicKey::ED25519PublicKey(ed25519_pub_key) => {
+            if pub_key_algo != PublicKeyAlgorithm::Ed25519 {
+                return false;
+            }
+            if !ed25519::verify(ed25519_pub_key, signed, signature) {
+                return false; // "x509: Ed25519 verification failure")
+            }
+            return true;
+        },
+        _ => return false,
+    }
+}
+
+fn ecdsa_verify_asn1(pub_key: &ecdsa::PublicKey, signed: &[u8], signature: &Vec<u8>) -> bool {
+    if let Some((r_bytes, s_bytes)) = parse_signature(&signature) {
+        //
+        let c = pub_key.curve.params();
+
+        //let q = *c.point_from_affine();
+
+        let r = BigInt::from_bytes_be(Sign::Plus, &r_bytes);
+        let s = BigInt::from_bytes_be(Sign::Plus, &s_bytes);
+
+        if !ecdsa::verify(&pub_key, &signed, &r, &s) {
+            return false;
+        }
+
+        return true;
+    }
+    else {
+        return false;
+    }
+}
+
+fn parse_signature(sig: &Vec<u8>) -> Option<(Vec<u8>, Vec<u8>)> { // fn parse_signature(sig: &[u8]) -> (r, s []byte, err error) {
+	let mut inner = ASN1String{ 0: Vec::new()}; //var inner cryptobyte.String
+
+    let mut r: Vec<u8> = Vec::new();
+    let mut s: Vec<u8> = Vec::new();
+	let mut input = ASN1String{ 0: sig.clone()}; // input := cryptobyte.String(sig)
+	if !input.read_asn1(&mut inner, SEQUENCE) ||   // if !input.ReadASN1(&inner, asn1.SEQUENCE) ||
+		!input.0.is_empty() ||  //  !input.Empty() ||
+		!inner.read_asn1_bytes(&mut r) || // !inner.ReadASN1Integer(&r) ||
+		!inner.read_asn1_bytes(&mut s) || // !inner.ReadASN1Integer(&s) ||
+		!inner.0.is_empty() { // !inner.Empty() {
+		return None; //return nil, nil, errors.New("invalid ASN.1")
+	}
+	return Some((r, s)); //return r, s, nil
+}
+
 fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &[u8]) -> Result<Certificate, Box<dyn Error>> {
     //
     let mut cert = Certificate {
@@ -1023,11 +1310,11 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
         subject: Name::default(),
         not_before: DateTime::<Utc>::MIN_UTC, //0i64,//SystemTime::now(),
         not_after: DateTime::<Utc>::MAX_UTC,//SystemTime::now(),
-        //key_usage: KeyUsage::default(), // Default value
+        key_usage: KeyUsage::CERT_SIGN,
         extensions: Vec::new(),
         extra_extensions: Vec::new(),
         //unhandled_critical_extensions: Vec::new(),
-        //ext_key_usage: Vec::new(),
+        ext_key_usage: Vec::new(),
         unknown_ext_key_usage: Vec::new(),
         basic_constraints_valid: false,
         is_ca: false,
@@ -1212,10 +1499,8 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
 	if !spki1.read_asn1_bitstring(&mut spk) {
 		panic!("x509: malformed subjectPublicKey");
 	}
-    println!("parseCertificate cert.public_key_algorithm 1214 string");
 	if cert.public_key_algorithm != PublicKeyAlgorithm::UnknownPublicKeyAlgorithm {
 
-        println!("parseCertificate cert.public_key_algorithm cert.public_key_algorithm != PublicKeyAlgorithm::UnknownPublicKeyAlgorithm");
         let public_key_info = PublicKeyInfo{algorithm: pk_ai, publicKey: spk};
         cert.public_key = parse_public_key(&public_key_info);
 		//cert.PublicKey, err = parsePublicKey(&publicKeyInfo{
@@ -1226,9 +1511,8 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
 			//return nil, err
 		//}
 	}
-    println!("parseCertificate cert.public_key_algorithm 1228 string");
 
-    /*
+
     if cert.version > 1 {
         if !tbs1.skip_optional_asn1(context_specific(1u8)) {
             panic!("x509: malformed issuerUniqueID");
@@ -1278,7 +1562,7 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
 				//}
             }
         }
-    }*/
+    }
 
     let mut signature = BitString{ bytes: vec![], bit_length: 0 } ;
 	if !input.read_asn1_bitstring(&mut signature) {
@@ -1835,7 +2119,7 @@ struct PublicKeyInfo {
 	publicKey: BitString,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum PublicKey {
     RsaPublicKey(rsa::PublicKey),
     ECDSAPublicKey(ecdsa::PublicKey),
@@ -2190,6 +2474,7 @@ fn test_parsing_root_cert_from_inet(){
     println!("the certificate.version is : {:?}", &certificate.version);
     println!("the certificate.serial_number is : {:?}", &certificate.serial_number.to_string());
     println!("the certificate.issuer.names is : {:?}", &certificate.issuer.names);
+    println!("the certificate.public_key is : {:?}", &certificate.public_key);
 
     // lenOfRootCert is : 1382
     let certificate_version: i64 = 3;
@@ -2201,6 +2486,11 @@ fn test_parsing_root_cert_from_inet(){
 
     assert_eq!(certificate.public_key_algorithm, PublicKeyAlgorithm::RSA); //rootCert.PublicKeyAlgorithm is : RSA
     // rootCert.PublicKey is : &{742766292573789461138430713106656498577482106105452767343211753017973550878861638590047246174848574634573720584492944669558785810905825702100325794803983120697401526210439826606874730300903862093323398754125584892080731234772626570955922576399434033022944334623029747454371697865218999618129768679013891932765999545116374192173968985738129135224425889467654431372779943313524100225335793262665132039441111162352797240438393795570253671786791600672076401253164614309929080014895216439462173458352253266568535919120175826866378039177020829725517356783703110010084715777806343235841345264684364598708732655710904078855499605447884872767583987312177520332134164321746982952420498393591583416464199126272682424674947720461866762624768163777784559646117979893432692133818266724658906066075396922419161138847526583266030290937955148683298741803605463007526904924936746018546134099068479370078440023459839544052468222048449819089106832452146002755336956394669648596035188293917750838002531358091511944112847917218550963597247358780879029417872466325821996717925086546502702016501643824750668459565101211439428003662613442032518886622942136328590823063627643918273848803884791311375697313014431195473178892344923166262358299334827234064598421 65537}
+
+    let rsa_public_n = BigInt::from_str("742766292573789461138430713106656498577482106105452767343211753017973550878861638590047246174848574634573720584492944669558785810905825702100325794803983120697401526210439826606874730300903862093323398754125584892080731234772626570955922576399434033022944334623029747454371697865218999618129768679013891932765999545116374192173968985738129135224425889467654431372779943313524100225335793262665132039441111162352797240438393795570253671786791600672076401253164614309929080014895216439462173458352253266568535919120175826866378039177020829725517356783703110010084715777806343235841345264684364598708732655710904078855499605447884872767583987312177520332134164321746982952420498393591583416464199126272682424674947720461866762624768163777784559646117979893432692133818266724658906066075396922419161138847526583266030290937955148683298741803605463007526904924936746018546134099068479370078440023459839544052468222048449819089106832452146002755336956394669648596035188293917750838002531358091511944112847917218550963597247358780879029417872466325821996717925086546502702016501643824750668459565101211439428003662613442032518886622942136328590823063627643918273848803884791311375697313014431195473178892344923166262358299334827234064598421").unwrap();
+    let etalon_pk = PublicKey::RsaPublicKey(rsa::PublicKey{n: rsa_public_n, e: 65537});
+    println!("etalon public_key is : {:?}", &etalon_pk);
+    assert_eq!(etalon_pk, certificate.public_key);
 }
 
 //#[test]

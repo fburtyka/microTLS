@@ -10,7 +10,7 @@ pub const PRIVATE_KEY_SIZE: usize = 64;
 pub const SIGNATURE_SIZE: usize = 64;
 pub const SEED_SIZE: usize = 32;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PublicKey(pub Vec<u8>);
 
 impl PublicKey {
@@ -119,3 +119,51 @@ pub enum Hash {
     //private_key[SEED_SIZE..].copy_from_slice(&public_key);
     //Ok(())
 //}
+
+// Verify reports whether sig is a valid signature of message by publicKey. It
+// will panic if len(pub_key) is not [PublicKeySize].
+pub fn verify(pub_key: &PublicKey, message: &[u8], sig: &[u8]) -> bool {
+	return false; //return verify_inner(publicKey, message, sig, domPrefixPure, "")
+}
+/*
+fn verify_inner(publicKey PublicKey, message, sig []byte, domPrefix, context string) -> bool {
+	if l := len(publicKey); l != PublicKeySize {
+		panic("ed25519: bad public key length: " + strconv.Itoa(l))
+	}
+
+	if len(sig) != SignatureSize || sig[63]&224 != 0 {
+		return false
+	}
+
+	A, err := (&edwards25519.Point{}).SetBytes(publicKey)
+	if err != nil {
+		return false
+	}
+
+	kh := sha512.New()
+	if domPrefix != domPrefixPure {
+		kh.Write([]byte(domPrefix))
+		kh.Write([]byte{byte(len(context))})
+		kh.Write([]byte(context))
+	}
+	kh.Write(sig[:32])
+	kh.Write(publicKey)
+	kh.Write(message)
+	hramDigest := make([]byte, 0, sha512.Size)
+	hramDigest = kh.Sum(hramDigest)
+	k, err := edwards25519.NewScalar().SetUniformBytes(hramDigest)
+	if err != nil {
+		panic("ed25519: internal error: setting scalar failed")
+	}
+
+	S, err := edwards25519.NewScalar().SetCanonicalBytes(sig[32:])
+	if err != nil {
+		return false
+	}
+
+	// [S]B = R + [k]A --> [k](-A) + [S]B = R
+	minusA := (&edwards25519.Point{}).Negate(A)
+	R := (&edwards25519.Point{}).VarTimeDoubleScalarBaseMult(k, minusA, S)
+
+	return bytes.Equal(sig[:32], R.Bytes())
+}*/
