@@ -10,7 +10,7 @@ use network::send;
 use hkdf_sha256::*;
 use certs::check_certs;
 
-use std::io::{self, Write, Read};
+use std::io::{self, Write};
 use std::net::TcpStream;
 use std::ops::Mul;
 
@@ -43,8 +43,12 @@ const SHA384WITH_RSAPSS: u16 = 2058; // 08 0a (RSA-PSS-PSS-SHA384)
 const SHA512WITH_RSAPSS: u16 = 2059; // 08 0b (RSA-PSS-PSS-SHA512)
 const PureEd25519: u16 = 2055; // 08 07 (ED25519)
 
-pub fn get_root_cert_from_online() -> [u8;1382] {
-    certs::ROOT_CERT_FROM_ONLINE
+pub fn get_root_cert_google_g1() -> [u8;1910] {
+    certs::ROOT_GOOGLE_CERT_G1
+}
+
+pub fn get_root_cert_google_g2() -> [u8;1910] {
+    certs::ROOT_GOOGLE_CERT_G2
 }
 
 pub struct Keys {
@@ -270,7 +274,7 @@ impl Session {
         let signature = &certs_chain[certs_chain_len + 11..certs_chain_len + 11 + signature_len];
 
         let current_timestamp = 1000i64;// SystemTime::now()
-        let root_cert = get_root_cert_from_online();
+        let root_cert = get_root_cert_google_g1();
 
         let client_server_hello = format::concatenate(&[self.messages.client_hello.contents(), self.messages.server_hello.contents()]);
         let check_sum = hkdf_sha256::sum256(&client_server_hello);
