@@ -2345,7 +2345,7 @@ fn parse_public_key(key_data: &PublicKeyInfo) -> PublicKey {
     }
 }
 
-pub fn check_certs(current_time: i64, check_sum: &[u8], certs_chain: &[u8], signature: &[u8], root_cert: &[u8]) -> bool {
+pub fn check_certs(current_time: i64, check_sum: &[u8], certs_chain: &[u8], signature: &[u8]) -> Option<PublicKey> {
     // extract
     // divide input string into three slices
     println!("check_certs certs_chain is : {:?}", &certs_chain);
@@ -2355,7 +2355,7 @@ pub fn check_certs(current_time: i64, check_sum: &[u8], certs_chain: &[u8], sign
     println!("check_certs certs_chain.len() is : {:?}", certs_chain.len());
 
     if len_of_certs_chain+1 != certs_chain.len() {
-        return false;
+        return None;
     }
 
     let len_of_leaf_cert = (certs_chain[3] as usize)*65536 + (certs_chain[4] as usize)*256 + (certs_chain[5] as usize);
@@ -2364,7 +2364,7 @@ pub fn check_certs(current_time: i64, check_sum: &[u8], certs_chain: &[u8], sign
     let leaf_cert_slice = &certs_chain[6..len_of_leaf_cert+6];
     println!("check_certs leaf_cert_slice is : {:?}", leaf_cert_slice);
 
-    let leaf_cert = parse_certificate(leaf_cert_slice); // leafCert, err := x509.ParseCertificate(leafCertSlice)
+    let mut leaf_cert = parse_certificate(leaf_cert_slice); // leafCert, err := x509.ParseCertificate(leafCertSlice)
     //if leaf_cert.not_after.Before(time.Now()) || leaf_cert.not_before.After(time.Now()) {
         //false
     //}
@@ -2377,7 +2377,7 @@ pub fn check_certs(current_time: i64, check_sum: &[u8], certs_chain: &[u8], sign
     let internal_cert_slice = &certs_chain[start_index + 3..start_index + len_of_internal_cert + 3];
     println!("check_certs internal_cert_slice is : {:?}", internal_cert_slice);
 
-    let internal_cert = parse_certificate(internal_cert_slice); // internalCert, err := x509.ParseCertificate(internalCertSlice)
+    let mut internal_cert = parse_certificate(internal_cert_slice); // internalCert, err := x509.ParseCertificate(internalCertSlice)
 
     println!("check_certs internal_cert.serial_number is : {:?}", internal_cert.serial_number.to_string());
 
@@ -2397,23 +2397,19 @@ pub fn check_certs(current_time: i64, check_sum: &[u8], certs_chain: &[u8], sign
     println!("check_certs root_cert_slice is : {:?}", root_cert_slice);
 
     let root_cert = parse_certificate(root_cert_slice);
+
+    if !leaf_cert.check_signature_from(&internal_cert){
+        return None;
+    }
     //rootCert, err := x509.ParseCertificate(rootCertSlice)
     // if err != nil {
     // fmt.Printf("ParseCertificate (rootCertSlice) err is : %v\n", err.Error())
     // return false
     // }
 
-    //err = leafCert.CheckSignatureFrom(internalCert);
-    // if err!= nil {
-    // fmt.Printf("ParseCertificate CheckSignatureFrom internalCert err is : %v\n", err.Error())
-    // return false
-    // }
-
-    // err = internalCert.CheckSignatureFrom(rootCert)
-    //   if err!= nil {
-    //     fmt.Printf("ParseCertificate CheckSignatureFrom rootCert err is : %v\n", err.Error())
-    //     return false
-    //   }
+    if !internal_cert.check_signature_from(&root_cert){
+        return None;
+    }
 
     match  leaf_cert.public_key_algorithm.to_string() {
         val if val=="RSA".to_string() => {
@@ -2422,10 +2418,10 @@ pub fn check_certs(current_time: i64, check_sum: &[u8], certs_chain: &[u8], sign
             if let PublicKey::RsaPublicKey(pub_key) = leaf_cert.public_key {
                 //
                 if !rsa::verify_pkcs1v15(&pub_key,256, check_sum, signature) {
-                    return false;
+                    return None;
                 }
             } else {
-                return false; //ErrCertificateTypeMismatch
+                return None; //ErrCertificateTypeMismatch
             }
 
         },
@@ -2442,11 +2438,11 @@ pub fn check_certs(current_time: i64, check_sum: &[u8], certs_chain: &[u8], sign
                 let r = BigInt::from_bytes_be(Sign::Plus, r_data); //     r := new(big.Int).SetBytes(rData)
                 let s = BigInt::from_bytes_be(Sign::Plus, s_data); //     s := new(big.Int).SetBytes(sData)
                 if !ecdsa::verify(&pub_key, check_sum, &r, &s) {
-                    return false;
+                    return None;
                 }
 
             } else {
-                return false;  //ErrCertificateTypeMismatch
+                return None;  //ErrCertificateTypeMismatch
             }
 
         },
@@ -2454,9 +2450,65 @@ pub fn check_certs(current_time: i64, check_sum: &[u8], certs_chain: &[u8], sign
     }
 
 
-    return true;
+    return Some(root_cert.public_key);
 }
 
+pub fn check_certs_with_fixed_root(current_time: i64, check_sum: &[u8], certs_chain: &[u8], signature: &[u8], root_cert_bytes: &[u8]) -> bool {
+    //
+    let check_certs_result = check_certs(current_time, check_sum, certs_chain, signature);
+    if check_certs_result.is_none() {
+        return false;
+    }
+
+    let proposed_root_cert = parse_certificate(&root_cert_bytes);
+
+    if (proposed_root_cert.public_key==check_certs_result.unwrap()){
+        return true;
+    }
+    return false;
+
+}
+
+pub fn check_certs_with_known_roots(current_time: i64, check_sum: &[u8], certs_chain: &[u8], signature: &[u8]) -> Option<BigInt> {
+    //
+    let check_certs_result = check_certs(current_time, check_sum, certs_chain, signature);
+    if check_certs_result.is_none() {
+        return None;
+    }
+    let root_public_key_from_server = check_certs_result.unwrap();
+
+    let google_cert_g1 = parse_certificate(&ROOT_GOOGLE_CERT_G1);
+    let google_cert_g2 = parse_certificate(&ROOT_GOOGLE_CERT_G2);
+    let google_cert_g3 = parse_certificate(&ROOT_GOOGLE_CERT_G3);
+    let google_cert_g4 = parse_certificate(&ROOT_GOOGLE_CERT_G4);
+
+    let mut result = BigInt::from(0);
+    let mut root_check = false;
+    if (google_cert_g1.public_key==root_public_key_from_server){
+        root_check = true;
+        result = google_cert_g1.serial_number;
+    }
+
+    if (google_cert_g2.public_key==root_public_key_from_server){
+        root_check = true;
+        result = google_cert_g2.serial_number;
+    }
+
+    if (google_cert_g3.public_key==root_public_key_from_server){
+        root_check = true;
+        result = google_cert_g3.serial_number;
+    }
+
+    if (google_cert_g4.public_key==root_public_key_from_server){
+        root_check = true;
+        result = google_cert_g4.serial_number;
+    }
+
+    if !root_check {
+        return None;
+    }
+    return Some(result);
+}
 
 #[test]
 fn test_parsing_leaf_cert(){

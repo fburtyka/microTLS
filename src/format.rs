@@ -203,13 +203,14 @@ pub fn parse_server_hello(buf: & [u8]) -> ServerHello {
         while &current_pos+2<buf.len() { // !extensions.is_empty()
             //dst.clone_from_slice(&buf[&current_pos..&current_pos+2]);
             let typ =  u16::from_be_bytes(buf[current_pos..current_pos+2].try_into().unwrap() );//let typ = extensions.read_u16().expect("can t read type of extension");
-            current_pos = current_pos + 2;
+            //current_pos = current_pos + 2;
             //let extension_length = u16::from_be_bytes(buf[&current_pos..&current_pos+2]);// let extension_length = extensions.read_u16().expect("can t read len of extension");
-            current_pos = current_pos + 2;
+            //current_pos = current_pos + 2;
             //let content = &buf[&current_pos..&current_pos+&extension_length];
             //current_pos = current_pos + extension_length;
             match typ {
                 0x0033 => { // key share
+                    current_pos = current_pos + 4;
                     // bypass type of key
                     current_pos = current_pos + 2;//let _ = contents.read_u16().expect("can t read type of key"); // 00 1d means x25519
                     let public_key_length = u16::from_be_bytes(buf[current_pos..current_pos+2].try_into().unwrap());//let public_key_length = contents.read_u16().expect("can t read len of public key");
@@ -219,11 +220,11 @@ pub fn parse_server_hello(buf: & [u8]) -> ServerHello {
                 }
                 0x002b => {
                     // игнорируем версию TLS (и ее длину, всегда равную 2)
-                    current_pos = current_pos + 4;
+                    current_pos = current_pos + 6;
                 }
                 _ => {
                     let extension_len = u16::from_be_bytes(buf[current_pos..current_pos+2].try_into().unwrap());
-                    current_pos = current_pos + 2;
+                    current_pos = current_pos + 4;
                     current_pos = current_pos + (extension_len as usize);
                     eprintln!("unknown extension");
                 }

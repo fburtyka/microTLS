@@ -19,7 +19,10 @@ use base64url::decode;
 use hex::FromHex;
 
 use rand::{RngCore, thread_rng};
-use crate::{network, format}; // Для генерации случайных данных
+use crate::{network, format};
+use crate::tls_session::certs::{check_certs_with_fixed_root, check_certs_with_known_roots}; // Для генерации случайных данных
+
+use std::fs::File;
 
 //const UnknownSignatureAlgorithm: u16 = 0;
 //const MD2WithRSA: u16 = 1;  // Unsupported.
@@ -230,21 +233,26 @@ impl Session {
 
     fn parse_server_handshake(&mut self) -> bool{
         let record = format::read_record(&mut self.conn);
-        self.messages.encrypted_server_handshake = record.clone();
-        //format::PrintByteArray(record);
         if record.rtype() != 0x17 {
             //panic!("expected wrapper (ParseServerHandshake)");
             println!("expected wrapper (ParseServerHandshake)");
             return false;
         }
-
-        //println!("self.keys.server_handshake_key is : {:?}", &self.keys.server_handshake_key);
-        //println!("self.keys.server_handshake_iv is : {:?}", &self.keys.server_handshake_iv);
-        //println!("record.0[..] is : {:?}", &record.0[..]);
-        let server_handshake_message = decrypt(&self.keys.server_handshake_key, &self.keys.server_handshake_iv, &record.0[..]);
-        //println!("server_handshake_message is : {:?}", &server_handshake_message);
+        let mut server_handshake_message = decrypt(&self.keys.server_handshake_key, &self.keys.server_handshake_iv, &record.0[..]);
+        if server_handshake_message.len()>2000 {
+            self.messages.encrypted_server_handshake = record.clone();
+        } else {
+            let record = format::read_record(&mut self.conn);
+            let mut server_handshake_message_part_2 = decrypt(&self.keys.server_handshake_key, &self.keys.server_handshake_iv, &record.0[..]);
+            server_handshake_message.append(&mut server_handshake_message_part_2);
+            let record = format::read_record(&mut self.conn);
+            let mut server_handshake_message_part_3 = decrypt(&self.keys.server_handshake_key, &self.keys.server_handshake_iv, &record.0[..]);
+            server_handshake_message.append(&mut server_handshake_message_part_3);
+            let header = [23u8, 3u8, 3u8, 0u8, 0u8];
+            let encrypted_overall_record = encrypt(&self.keys.server_handshake_key, &self.keys.server_handshake_iv, &server_handshake_message, &header);
+            self.messages.encrypted_server_handshake = Record{0: encrypted_overall_record};
+        }
         self.messages.server_handshake = DecryptedRecord{ 0: server_handshake_message};
-        //format::PrintByteArray(session.Messages.ServerHandshake)
 
         self.make_application_keys();
         if !(self.check_handshake()){
@@ -274,18 +282,21 @@ impl Session {
         let signature = &certs_chain[certs_chain_len + 11..certs_chain_len + 11 + signature_len];
 
         let current_timestamp = 1000i64;// SystemTime::now()
-        let root_cert = get_root_cert_google_g1();
 
         let client_server_hello = format::concatenate(&[self.messages.client_hello.contents(), self.messages.server_hello.contents()]);
         let check_sum = hkdf_sha256::sum256(&client_server_hello);
-        if !check_certs(current_timestamp,
+        let check_result = check_certs_with_known_roots(current_timestamp,
                         &check_sum,
                         &certs_chain[4..certs_chain_len+1],
-                        &root_cert, &signature) {
+                        &signature);
+        if check_result.is_none() {
             //panic(err.Error())
             println!("error in certificates chain !");
             return false;
         }
+        //write to file
+        let mut file = File::create("found_root_id.txt").expect("Error creating file");
+        file.write(check_result.unwrap().to_string().as_bytes());
         return true;
     }
 
@@ -670,7 +681,7 @@ pub fn extract_json_public_key_from_tls(raw: Vec<u8>) -> Vec<u8> {
     }
     let check_sum = hkdf_sha256::sum256(&client_server_hello);
 
-    if !check_certs(timestamp, &check_sum, &certs_chain[4..certs_chain_len+1], &signature, &external_root_cert) {
+    if !check_certs_with_fixed_root(timestamp, &check_sum, &certs_chain[4..certs_chain_len+1], &signature, &external_root_cert) {
         return vec![0u8, 3u8, 39u8]; // "error in certificates chain !"
     }
 
