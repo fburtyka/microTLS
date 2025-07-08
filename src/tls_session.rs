@@ -242,11 +242,14 @@ impl Session {
         if server_handshake_message.len()>2000 {
             self.messages.encrypted_server_handshake = record.clone();
         } else {
+            //server_handshake_message.pop();
+            server_handshake_message = [8u8, 0u8, 0u8, 2u8, 0u8, 0u8].to_vec();
             let mut records_received_counter = 1u8;
             let record = format::read_record(&mut self.conn);
             let mut iv = self.keys.server_handshake_iv.clone();
             iv[11] ^= records_received_counter;
             let mut server_handshake_message_part_2 = decrypt(&self.keys.server_handshake_key, &iv, &record.0[..]);
+            server_handshake_message_part_2.pop();
             server_handshake_message.append(&mut server_handshake_message_part_2);
             let record = format::read_record(&mut self.conn);
             records_received_counter += 1;
