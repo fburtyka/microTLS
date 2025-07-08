@@ -91,7 +91,8 @@ fn mainOffline() {
 fn main() {
     // get("jvns.ca");
     // get("https://www.googleapis.com/oauth2/v3/certs");
-    get("www.googleapis.com");
+    //get("www.googleapis.com");
+    get("kauth.kakao.com");
 }
 
 fn get(domain: &str) {
@@ -100,9 +101,14 @@ fn get(domain: &str) {
     session.connect();
 
     let req = format!(
-        "GET /oauth2/v3/certs HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+        "GET /.well-known/jwks.json HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
         domain
     );
+
+    /*let req = format!(
+        "GET /oauth2/v3/certs HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+        domain
+    );*/
     println!("req.as_bytes() is : {:?}", req.as_bytes());
     session.send_data(req.as_bytes());// session.send_data(req.as_bytes()).expect("Failed to send data");
 

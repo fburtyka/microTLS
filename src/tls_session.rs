@@ -242,15 +242,26 @@ impl Session {
         if server_handshake_message.len()>2000 {
             self.messages.encrypted_server_handshake = record.clone();
         } else {
+            let mut records_received_counter = 1u8;
             let record = format::read_record(&mut self.conn);
-            let mut server_handshake_message_part_2 = decrypt(&self.keys.server_handshake_key, &self.keys.server_handshake_iv, &record.0[..]);
+            let mut iv = self.keys.server_handshake_iv.clone();
+            iv[11] ^= records_received_counter;
+            let mut server_handshake_message_part_2 = decrypt(&self.keys.server_handshake_key, &iv, &record.0[..]);
             server_handshake_message.append(&mut server_handshake_message_part_2);
             let record = format::read_record(&mut self.conn);
-            let mut server_handshake_message_part_3 = decrypt(&self.keys.server_handshake_key, &self.keys.server_handshake_iv, &record.0[..]);
+            records_received_counter += 1;
+            iv = self.keys.server_handshake_iv.clone();
+            iv[11] ^= records_received_counter;
+            let mut server_handshake_message_part_3 = decrypt(&self.keys.server_handshake_key, &iv, &record.0[..]);
             server_handshake_message.append(&mut server_handshake_message_part_3);
-            let header = [23u8, 3u8, 3u8, 0u8, 0u8];
+            let server_handshake_message_len = server_handshake_message.len();
+            let server_handhake_len_bytes = format::u16_to_bytes(server_handshake_message_len as u16);
+            let mut header = [23u8, 3u8, 3u8, 0u8, 0u8];
+            header[3] = server_handhake_len_bytes[0];
+            header[4] = server_handhake_len_bytes[1];
             let encrypted_overall_record = encrypt(&self.keys.server_handshake_key, &self.keys.server_handshake_iv, &server_handshake_message, &header);
             self.messages.encrypted_server_handshake = Record{0: encrypted_overall_record};
+
         }
         self.messages.server_handshake = DecryptedRecord{ 0: server_handshake_message};
 
