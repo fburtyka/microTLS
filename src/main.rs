@@ -73,7 +73,7 @@ fn mainOffline() {
     append_uint32(&mut data, current_timestamp);
     let mut kid = vec![13, 138, 103, 57, 158, 120, 130, 172, 174, 125, 127, 104, 178, 40, 2, 86, 167, 150, 165, 130];//vec![0u8; 20];
     let root_cert = tls_session::get_root_cert_google_g1();
-    let mut len_of_root_cert = vec![5u8, 102u8];
+    let mut len_of_root_cert = vec![5u8, 91u8];
     data.append(&mut kid);
     data.append(&mut len_of_root_cert);
     data.append(&mut root_cert.to_vec());
@@ -86,7 +86,6 @@ fn mainOffline() {
     println!("public_key_data is : {:?}", public_key_data);
 
 }
-
 
 fn main() {
     // get("jvns.ca");
