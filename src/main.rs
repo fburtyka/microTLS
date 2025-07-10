@@ -93,6 +93,7 @@ fn main() {
     // get("https://www.googleapis.com/oauth2/v3/certs");
     //get("www.googleapis.com");
     get("kauth.kakao.com");
+    //get("www.facebook.com");
 }
 
 fn get(domain: &str) {

@@ -222,17 +222,16 @@ impl Session {
         let hello = format::parse_server_hello(&mut record.contents());
         self.server_hello = hello;
 
-        // ignore change cipher spec 14 03 03
-        let record = format::read_record(&mut self.conn); // let record = tls_format::ReadRecord(&self.conn);
-        if record.rtype() != 0x14 {
-            //panic("expected change cipher spec")
-            println!("expected change cipher spec")
-        }
-
     }
 
     fn parse_server_handshake(&mut self) -> bool{
-        let record = format::read_record(&mut self.conn);
+
+        // ignore change cipher spec 14 03 03
+        let mut record = format::read_record(&mut self.conn); // let record = tls_format::ReadRecord(&self.conn);
+        if record.rtype() == 0x14 {
+            //println!("pass change cipher spec")
+            record = format::read_record(&mut self.conn);
+        }
         if record.rtype() != 0x17 {
             //panic!("expected wrapper (ParseServerHandshake)");
             println!("expected wrapper (ParseServerHandshake)");
@@ -242,8 +241,8 @@ impl Session {
         if server_handshake_message.len()>2000 {
             self.messages.encrypted_server_handshake = record.clone();
         } else {
-            //server_handshake_message.pop();
-            server_handshake_message = [8u8, 0u8, 0u8, 2u8, 0u8, 0u8].to_vec();
+            server_handshake_message.pop();
+            //server_handshake_message = [8u8, 0u8, 0u8, 2u8, 0u8, 0u8].to_vec();
             let mut records_received_counter = 1u8;
             let record = format::read_record(&mut self.conn);
             let mut iv = self.keys.server_handshake_iv.clone();
@@ -256,7 +255,18 @@ impl Session {
             iv = self.keys.server_handshake_iv.clone();
             iv[11] ^= records_received_counter;
             let mut server_handshake_message_part_3 = decrypt(&self.keys.server_handshake_key, &iv, &record.0[..]);
+            server_handshake_message_part_3.pop();
             server_handshake_message.append(&mut server_handshake_message_part_3);
+
+            let record = format::read_record(&mut self.conn);
+            records_received_counter += 1;
+            iv = self.keys.server_handshake_iv.clone();
+            iv[11] ^= records_received_counter;
+            let mut server_handshake_message_part_4 = decrypt(&self.keys.server_handshake_key, &iv, &record.0[..]);
+            //server_handshake_message_part_4.pop();
+            server_handshake_message.append(&mut server_handshake_message_part_4);
+
+
             let server_handshake_message_len = server_handshake_message.len();
             let server_handhake_len_bytes = format::u16_to_bytes(server_handshake_message_len as u16);
             let mut header = [23u8, 3u8, 3u8, 0u8, 0u8];
@@ -277,7 +287,8 @@ impl Session {
 
     pub fn check_handshake(&mut self) -> bool {
         let handshake_data = self.messages.server_handshake.contents();
-        let certs_chain = &handshake_data[7..];
+        let len_of_padding = handshake_data[3] as usize;
+        let certs_chain = &handshake_data[4+len_of_padding+1..];//let certs_chain = &handshake_data[7..];
 
         //next three bytes is the length of certs chain
         let certs_chain_len = (certs_chain[0] as usize)*65536 + (certs_chain[1] as usize)*256 + (certs_chain[2] as usize);
