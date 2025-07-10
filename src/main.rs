@@ -71,9 +71,12 @@ fn mainOffline() {
     let current_timestamp = 1000u32;// SystemTime::now()
     let mut data: Vec<u8> = Vec::new();
     append_uint32(&mut data, current_timestamp);
-    let mut kid = vec![13, 138, 103, 57, 158, 120, 130, 172, 174, 125, 127, 104, 178, 40, 2, 86, 167, 150, 165, 130];//vec![0u8; 20];
+    //let mut kid = vec![13, 138, 103, 57, 158, 120, 130, 172, 174, 125, 127, 104, 178, 40, 2, 86, 167, 150, 165, 130];//vec![0u8; 20];
+    //let mut kid = hex::decode("8e8fc8e556f7a76d08d35829d6f90ae2e12cfd0d").unwrap();
+    let mut kid = hex::decode("9f252dadd5f233f93d2fa528d12fea").unwrap();
     let root_cert = tls_session::get_root_cert_google_g1();
     let mut len_of_root_cert = vec![5u8, 91u8];
+    data.push(kid.len() as u8);
     data.append(&mut kid);
     data.append(&mut len_of_root_cert);
     data.append(&mut root_cert.to_vec());
@@ -90,8 +93,8 @@ fn mainOffline() {
 fn main() {
     // get("jvns.ca");
     // get("https://www.googleapis.com/oauth2/v3/certs");
-    //get("www.googleapis.com");
-    get("kauth.kakao.com");
+    get("www.googleapis.com");
+    //get("kauth.kakao.com");
     //get("www.facebook.com");
 }
 
@@ -100,17 +103,18 @@ fn get(domain: &str) {
     let mut session = Session::new(String::from(domain)).expect("Failed to connect to domain");
     session.connect();
 
-    let req = format!(
+    /*let req = format!(
         "GET /.well-known/jwks.json HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
         domain
-    );
+    );*/
 
-    /*let req = format!(
+    let req = format!(
         "GET /oauth2/v3/certs HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
         domain
-    );*/
+    );
     println!("req.as_bytes() is : {:?}", req.as_bytes());
     session.send_data(req.as_bytes());// session.send_data(req.as_bytes()).expect("Failed to send data");
+
 
     println!("SendData done");
     // session.receive_data(); // ignore the session ticket
@@ -120,8 +124,27 @@ fn get(domain: &str) {
     let resp = session.receive_http_response(); // let resp = session.receive_http_response().expect("Failed to receive HTTP response")
     println!("ReceiveHTTPResponse done");
     println!("{}", String::from_utf8_lossy(&resp));
-    let serialized_session = session.serialize();
+    let mut serialized_session = session.serialize();
     println!("serialized_session is : {:?}", serialized_session);
+
+    let current_timestamp = 1000u32;// SystemTime::now()
+    let mut data: Vec<u8> = Vec::new();
+    append_uint32(&mut data, current_timestamp);
+    //let mut kid = vec![142, 143, 200, 229, 86, 247, 167, 109, 8, 211, 88, 41, 214, 249, 10, 226, 225, 44, 253, 13];//vec![0u8; 20];
+    let mut kid = hex::decode("8e8fc8e556f7a76d08d35829d6f90ae2e12cfd0d").unwrap();
+    //let mut kidKakao = hex::decode("9f252dadd5f233f93d2fa528d12fea").unwrap();
+    let root_cert = tls_session::get_root_cert_google_g1();
+    let mut len_of_root_cert = vec![5u8, 91u8];
+    data.push(kid.len() as u8);
+    data.append(&mut kid);
+    data.append(&mut len_of_root_cert);
+    data.append(&mut root_cert.to_vec());
+    data.append(&mut serialized_session);
+
+    println!("THE data is : {:?}", data);
+    let public_key_data = tls_session::extract_json_public_key_from_tls(data);
+
+    println!("public_key_data is : {:?}", public_key_data);
 }
 
 

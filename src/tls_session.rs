@@ -570,12 +570,14 @@ impl Session {
 
 pub fn extract_json_public_key_from_tls(raw: Vec<u8>) -> Vec<u8> {
     let timestamp_bytes = &raw[..4];
-    let kid = &raw[4..24];
-    let certificate_len = (256*raw[24] as u16 + raw[25] as u16) as usize;
+    let len_of_kid = raw[4] as usize;
+    let kid = &raw[5..5 + len_of_kid]; // let kid = &raw[4..24];
+    let start_cert = 5 + len_of_kid;
+    let certificate_len = (256*raw[start_cert] as u16 + raw[start_cert+1] as u16) as usize; // let certificate_len = (256*raw[24] as u16 + raw[25] as u16) as usize;
     println!("certificate_len is : {:?}", &certificate_len);
 
-    let external_root_cert = &raw[26..26+certificate_len];
-    let data = &raw[26+certificate_len..];
+    let external_root_cert = &raw[start_cert+2..start_cert+2+certificate_len]; // let external_root_cert = &raw[26..26+certificate_len];
+    let data = &raw[start_cert+2+certificate_len..]; // let data = &raw[26+certificate_len..];
 
     // the first output byte indicates the success of the process: if it equals to 1 then success
     // then follows the public keys from json
@@ -591,24 +593,27 @@ pub fn extract_json_public_key_from_tls(raw: Vec<u8>) -> Vec<u8> {
     if data.len()<6000{ // 6500
         return vec![0u8, 3u8, 33u8]; // "insufficient len" : 0x3, 0x21 = 801
     }
-    let client_hello:[u8;166] = data[34..200].try_into().unwrap(); // len is 166 bytes
+    let client_hello_len = data[38] as usize;
+    println!("client_hello_len is : {:?}", &client_hello_len);
+    let client_hello: &[u8] = &data[34..39+client_hello_len]; //let client_hello:[u8;166] = data[34..200].try_into().unwrap(); // len is 166 bytes
     println!("client_hello is : {:?}", &client_hello);
     if client_hello[0] != 0x16 {
         return vec![0u8, 3u8, 34u8]; // "client hello not found"
     }
-    let server_hello:[u8;95] = data[200..295].try_into().unwrap(); // len is 95 bytes
+    let server_hello_start = 39+client_hello_len;
+    let server_hello:[u8;95] = data[server_hello_start..server_hello_start+95].try_into().unwrap();//let server_hello:[u8;95] = data[200..295].try_into().unwrap(); // len is 95 bytes
     println!("server_hello is : {:?}", &server_hello);
     if server_hello[0] != 0x16 {
         println!(" server hello not found");
         return vec![0u8, 3u8, 35u8]; // "server hello not found"
     }
-    let enc_ser_handshake_len = 256*data[298] as u16 + data[299] as u16;
+    let enc_ser_handshake_len = 256*data[server_hello_start+98] as u16 + data[server_hello_start+99] as u16; // let enc_ser_handshake_len = 256*data[298] as u16 + data[299] as u16;
     println!("enc_ser_handshake_len is : {:?}", &enc_ser_handshake_len);// 16*256 + 249 = 4345
-    let handshake_end_index = 295 + 5 + enc_ser_handshake_len as usize;
+    let handshake_end_index = server_hello_start + 95 + 5 + enc_ser_handshake_len as usize; // let handshake_end_index = 295 + 5 + enc_ser_handshake_len as usize;
     println!("handshake_end_index is : {:?}", &handshake_end_index);
 
     // let encrypted_server_handshake:[u8;4350] = data[295..handshake_end_index].try_into().unwrap();
-    let encrypted_server_handshake = &data[295..handshake_end_index];
+    let encrypted_server_handshake = &data[server_hello_start + 95..handshake_end_index]; // let encrypted_server_handshake = &data[295..handshake_end_index];
     println!("encrypted_server_handshake is : {:?}", &encrypted_server_handshake);
 
     let application_request:[u8;100] = data[handshake_end_index..handshake_end_index+100].try_into().unwrap();
@@ -719,7 +724,7 @@ pub fn extract_json_public_key_from_tls(raw: Vec<u8>) -> Vec<u8> {
     }
 
     // =================== begin check application request ===================
-    let domain = "www.googleapis.com";
+    /*let domain = "www.googleapis.com";
     let etalon_req = format!("GET /oauth2/v3/certs HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n", domain);
     let etalon_req_bytes = etalon_req.as_bytes();
     //encrypt etalon application request
@@ -733,7 +738,7 @@ pub fn extract_json_public_key_from_tls(raw: Vec<u8>) -> Vec<u8> {
     // match with application_request
     if application_request.to_vec() != etalon_encrypted {
         return vec![0u8, 3u8, 40u8]; // "incorrect application request !"
-    }
+    }*/
 
     // =================== begin decryption ticket and check =========================
 
@@ -745,7 +750,7 @@ pub fn extract_json_public_key_from_tls(raw: Vec<u8>) -> Vec<u8> {
     //println!("len_of_first_packet is : {:?}", &len_of_first_packet);
 
     let mut iv = server_application_iv.clone();
-    let mut records_received: u8= 1;
+    let mut records_received: u8 = 1;
     iv[11] ^= records_received;
 
     let mut plaintext = decrypt(&server_application_key, &iv.try_into().unwrap(), &http_response[..len_of_first_packet]);
