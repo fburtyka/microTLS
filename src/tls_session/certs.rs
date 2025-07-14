@@ -8,14 +8,14 @@ use crate::tls_session::hkdf_sha256;
 
 //use core::slice::SlicePattern;
 use std::net;
-use std::ops::{AddAssign, Deref};
+//use std::ops::{AddAssign, Deref};
 //use std::time::SystemTime;
-use chrono::{DateTime, Utc, TimeZone, ParseError};
+use chrono::{DateTime, Utc, TimeZone};
 use std::ops::Neg;
 
 use num_bigint::{BigInt, ToBigInt, Sign};
 //use num_traits::One;
-use std::iter::FromIterator;
+//use std::iter::FromIterator;
 use std::str::FromStr;
 
 use std::collections::{hash_map, HashMap};
@@ -234,9 +234,76 @@ pub const ROOT_GOOGLE_CERT_G4: [u8; 525] = [48, 130, 2, 9, 48, 130, 1, 142, 160,
     115, 32, 76, 76, 67, 49, 20, 48, 18, 6, 3, 85, 4, 3, 19, 11, 71, 84, 83, 32, 82, 111, 111, 116, 32, 82, 52, 48, 118, 48, 16, 6, 7, 42,
     134, 72, 206, 61, 2, 1, 6, 5, 43, 129, 4, 0, 34, 3, 98, 0, 4, 243, 116, 115, 167, 104, 139, 96, 174, 67, 184, 53, 197, 129, 48, 123,
     75, 73, 157, 251, 193, 97, 206, 230, 222, 70, 189, 107, 213, 97, 24, 53, 174, 64, 221, 115, 247, 137, 145, 48, 90, 235, 60, 238, 133,
-    124, 162, 64, 118, 59, 169, 198, 184, 71, 216, 42, 231, 146, 145, 106, 115, 233, 177, 114, 57, 159, 41, 159, 162, 152, 211, 95, 94, 88, 134, 101, 15, 161, 132, 101, 6, 209, 220, 139, 201, 199, 115, 200, 140, 106, 47, 229, 196, 171, 209, 29, 138, 163, 66, 48, 64, 48, 14, 6, 3, 85, 29, 15, 1, 1, 255, 4, 4, 3, 2, 1, 134, 48, 15, 6, 3, 85, 29, 19, 1, 1, 255, 4, 5, 48, 3, 1, 1, 255, 48, 29, 6, 3, 85, 29, 14, 4, 22, 4, 20, 128, 76, 214, 235, 116, 255, 73, 54, 163, 213, 216, 252, 181, 62, 197, 106, 240, 148, 29, 140, 48, 10, 6, 8, 42, 134, 72, 206, 61, 4, 3, 3, 3, 105, 0, 48, 102, 2, 49, 0, 232, 64, 255, 131, 222, 3, 244, 159, 174, 29, 122, 167, 46, 185, 175, 79, 246, 131, 29, 14, 45, 133, 1, 29, 209, 217, 106, 236, 15, 194, 175, 199, 94, 86, 94, 92, 213, 28, 88, 34, 40, 11, 247, 48, 182, 47, 177, 124, 2, 49, 0, 240, 97, 60, 167, 244, 160, 130, 227, 33, 213, 132, 29, 115, 134, 156, 45, 175, 202, 52, 155, 241, 159, 185, 35, 54, 226, 188, 96, 3, 157, 128, 179, 154, 86, 200, 225, 226, 187, 20, 121, 202, 205, 33, 212, 148, 181, 73, 67];
+    124, 162, 64, 118, 59, 169, 198, 184, 71, 216, 42, 231, 146, 145, 106, 115, 233, 177, 114, 57, 159, 41, 159, 162, 152, 211, 95, 94, 88,
+    134, 101, 15, 161, 132, 101, 6, 209, 220, 139, 201, 199, 115, 200, 140, 106, 47, 229, 196, 171, 209, 29, 138, 163, 66, 48, 64, 48, 14,
+    6, 3, 85, 29, 15, 1, 1, 255, 4, 4, 3, 2, 1, 134, 48, 15, 6, 3, 85, 29, 19, 1, 1, 255, 4, 5, 48, 3, 1, 1, 255, 48, 29, 6, 3, 85, 29, 14,
+    4, 22, 4, 20, 128, 76, 214, 235, 116, 255, 73, 54, 163, 213, 216, 252, 181, 62, 197, 106, 240, 148, 29, 140, 48, 10, 6, 8, 42, 134, 72,
+    206, 61, 4, 3, 3, 3, 105, 0, 48, 102, 2, 49, 0, 232, 64, 255, 131, 222, 3, 244, 159, 174, 29, 122, 167, 46, 185, 175, 79, 246, 131, 29,
+    14, 45, 133, 1, 29, 209, 217, 106, 236, 15, 194, 175, 199, 94, 86, 94, 92, 213, 28, 88, 34, 40, 11, 247, 48, 182, 47, 177, 124, 2, 49,
+    0, 240, 97, 60, 167, 244, 160, 130, 227, 33, 213, 132, 29, 115, 134, 156, 45, 175, 202, 52, 155, 241, 159, 185, 35, 54, 226, 188, 96, 3,
+    157, 128, 179, 154, 86, 200, 225, 226, 187, 20, 121, 202, 205, 33, 212, 148, 181, 73, 67];
 
+pub const ROOT_FACEBOOK_CERT: [u8; 969] = [48, 130, 3, 197, 48, 130, 2, 173, 160, 3, 2, 1, 2, 2, 16, 2, 172, 92, 38, 106, 11, 64, 155, 143, 11,
+    121, 242, 174, 70, 37, 119, 48, 13, 6, 9, 42, 134, 72, 134, 247, 13, 1, 1, 5, 5, 0, 48, 108, 49, 11, 48, 9, 6, 3, 85, 4, 6, 19, 2, 85,
+    83, 49, 21, 48, 19, 6, 3, 85, 4, 10, 19, 12, 68, 105, 103, 105, 67, 101, 114, 116, 32, 73, 110, 99, 49, 25, 48, 23, 6, 3, 85, 4, 11, 19,
+    16, 119, 119, 119, 46, 100, 105, 103, 105, 99, 101, 114, 116, 46, 99, 111, 109, 49, 43, 48, 41, 6, 3, 85, 4, 3, 19, 34, 68, 105, 103, 105,
+    67, 101, 114, 116, 32, 72, 105, 103, 104, 32, 65, 115, 115, 117, 114, 97, 110, 99, 101, 32, 69, 86, 32, 82, 111, 111, 116, 32, 67, 65, 48,
+    30, 23, 13, 48, 54, 49, 49, 49, 48, 48, 48, 48, 48, 48, 48, 90, 23, 13, 51, 49, 49, 49, 49, 48, 48, 48, 48, 48, 48, 48, 90, 48, 108, 49,
+    11, 48, 9, 6, 3, 85, 4, 6, 19, 2, 85, 83, 49, 21, 48, 19, 6, 3, 85, 4, 10, 19, 12, 68, 105, 103, 105, 67, 101, 114, 116, 32, 73, 110, 99,
+    49, 25, 48, 23, 6, 3, 85, 4, 11, 19, 16, 119, 119, 119, 46, 100, 105, 103, 105, 99, 101, 114, 116, 46, 99, 111, 109, 49, 43, 48, 41, 6, 3,
+    85, 4, 3, 19, 34, 68, 105, 103, 105, 67, 101, 114, 116, 32, 72, 105, 103, 104, 32, 65, 115, 115, 117, 114, 97, 110, 99, 101, 32, 69, 86, 32,
+    82, 111, 111, 116, 32, 67, 65, 48, 130, 1, 34, 48, 13, 6, 9, 42, 134, 72, 134, 247, 13, 1, 1, 1, 5, 0, 3, 130, 1, 15, 0, 48, 130, 1, 10, 2,
+    130, 1, 1, 0, 198, 204, 229, 115, 230, 251, 212, 187, 229, 45, 45, 50, 166, 223, 229, 129, 63, 201, 205, 37, 73, 182, 113, 42, 195, 213, 148,
+    52, 103, 162, 10, 28, 176, 95, 105, 166, 64, 177, 196, 183, 178, 143, 208, 152, 164, 169, 65, 89, 58, 211, 220, 148, 214, 60, 219, 116, 56,
+    164, 74, 204, 77, 37, 130, 247, 74, 165, 83, 18, 56, 238, 243, 73, 109, 113, 145, 126, 99, 182, 171, 166, 95, 195, 164, 132, 248, 79, 98, 81,
+    190, 248, 197, 236, 219, 56, 146, 227, 6, 229, 8, 145, 12, 196, 40, 65, 85, 251, 203, 90, 137, 21, 126, 113, 232, 53, 191, 77, 114, 9, 61,
+    190, 58, 56, 80, 91, 119, 49, 27, 141, 179, 199, 36, 69, 154, 167, 172, 109, 0, 20, 90, 4, 183, 186, 19, 235, 81, 10, 152, 65, 65, 34, 78,
+    101, 97, 135, 129, 65, 80, 166, 121, 92, 137, 222, 25, 74, 87, 213, 46, 230, 93, 28, 83, 44, 126, 152, 205, 26, 6, 22, 164, 104, 115, 208,
+    52, 4, 19, 92, 161, 113, 211, 90, 124, 85, 219, 94, 100, 225, 55, 135, 48, 86, 4, 229, 17, 180, 41, 128, 18, 241, 121, 57, 136, 162, 2, 17,
+    124, 39, 102, 183, 136, 183, 120, 242, 202, 10, 168, 56, 171, 10, 100, 194, 191, 102, 93, 149, 132, 193, 161, 37, 30, 135, 93, 26, 80, 11,
+    32, 18, 204, 65, 187, 110, 11, 81, 56, 184, 75, 203, 2, 3, 1, 0, 1, 163, 99, 48, 97, 48, 14, 6, 3, 85, 29, 15, 1, 1, 255, 4, 4, 3, 2, 1, 134,
+    48, 15, 6, 3, 85, 29, 19, 1, 1, 255, 4, 5, 48, 3, 1, 1, 255, 48, 29, 6, 3, 85, 29, 14, 4, 22, 4, 20, 177, 62, 195, 105, 3, 248, 191, 71, 1,
+    212, 152, 38, 26, 8, 2, 239, 99, 100, 43, 195, 48, 31, 6, 3, 85, 29, 35, 4, 24, 48, 22, 128, 20, 177, 62, 195, 105, 3, 248, 191, 71, 1, 212,
+    152, 38, 26, 8, 2, 239, 99, 100, 43, 195, 48, 13, 6, 9, 42, 134, 72, 134, 247, 13, 1, 1, 5, 5, 0, 3, 130, 1, 1, 0, 28, 26, 6, 151, 220, 215,
+    156, 159, 60, 136, 102, 6, 8, 87, 33, 219, 33, 71, 248, 42, 103, 170, 191, 24, 50, 118, 64, 16, 87, 193, 138, 243, 122, 217, 17, 101, 142,
+    53, 250, 158, 252, 69, 181, 158, 217, 76, 49, 75, 184, 145, 232, 67, 44, 142, 179, 120, 206, 219, 227, 83, 121, 113, 214, 229, 33, 148, 1,
+    218, 85, 135, 154, 36, 100, 246, 138, 102, 204, 222, 156, 55, 205, 168, 52, 177, 105, 155, 35, 200, 158, 120, 34, 43, 112, 67, 227, 85, 71,
+    49, 97, 25, 239, 88, 197, 133, 47, 78, 48, 246, 160, 49, 22, 35, 200, 231, 226, 101, 22, 51, 203, 191, 26, 27, 160, 61, 248, 202, 94, 139,
+    49, 139, 96, 8, 137, 45, 12, 6, 92, 82, 183, 196, 249, 10, 152, 209, 21, 95, 159, 18, 190, 124, 54, 99, 56, 189, 68, 164, 127, 228, 38, 43,
+    10, 196, 151, 105, 13, 233, 140, 226, 192, 16, 87, 184, 200, 118, 18, 145, 85, 242, 72, 105, 216, 188, 42, 2, 91, 15, 68, 212, 32, 49, 219,
+    244, 186, 112, 38, 93, 144, 96, 158, 188, 75, 23, 9, 47, 180, 203, 30, 67, 104, 201, 7, 39, 193, 210, 92, 247, 234, 33, 185, 104, 18, 156,
+    60, 156, 191, 158, 252, 128, 92, 155, 99, 205, 236, 71, 170, 37, 39, 103, 160, 55, 243, 0, 130, 125, 84, 215, 169, 248, 233, 46, 19, 163,
+    119, 232, 31, 74 ];
 
+pub const ROOT_KAKAO_CERT: [u8; 914] = [48, 130, 3, 142, 48, 130, 2, 118, 160, 3, 2, 1, 2, 2, 16, 3, 58, 241, 230, 167, 17, 169, 160, 187, 40, 100,
+    177, 29, 9, 250, 229, 48, 13, 6, 9, 42, 134, 72, 134, 247, 13, 1, 1, 11, 5, 0, 48, 97, 49, 11, 48, 9, 6, 3, 85, 4, 6, 19, 2, 85, 83, 49, 21,
+    48, 19, 6, 3, 85, 4, 10, 19, 12, 68, 105, 103, 105, 67, 101, 114, 116, 32, 73, 110, 99, 49, 25, 48, 23, 6, 3, 85, 4, 11, 19, 16, 119, 119,
+    119, 46, 100, 105, 103, 105, 99, 101, 114, 116, 46, 99, 111, 109, 49, 32, 48, 30, 6, 3, 85, 4, 3, 19, 23, 68, 105, 103, 105, 67, 101, 114,
+    116, 32, 71, 108, 111, 98, 97, 108, 32, 82, 111, 111, 116, 32, 71, 50, 48, 30, 23, 13, 49, 51, 48, 56, 48, 49, 49, 50, 48, 48, 48, 48, 90,
+    23, 13, 51, 56, 48, 49, 49, 53, 49, 50, 48, 48, 48, 48, 90, 48, 97, 49, 11, 48, 9, 6, 3, 85, 4, 6, 19, 2, 85, 83, 49, 21, 48, 19, 6, 3, 85,
+    4, 10, 19, 12, 68, 105, 103, 105, 67, 101, 114, 116, 32, 73, 110, 99, 49, 25, 48, 23, 6, 3, 85, 4, 11, 19, 16, 119, 119, 119, 46, 100, 105,
+    103, 105, 99, 101, 114, 116, 46, 99, 111, 109, 49, 32, 48, 30, 6, 3, 85, 4, 3, 19, 23, 68, 105, 103, 105, 67, 101, 114, 116, 32, 71, 108,
+    111, 98, 97, 108, 32, 82, 111, 111, 116, 32, 71, 50, 48, 130, 1, 34, 48, 13, 6, 9, 42, 134, 72, 134, 247, 13, 1, 1, 1, 5, 0, 3, 130, 1, 15,
+    0, 48, 130, 1, 10, 2, 130, 1, 1, 0, 187, 55, 205, 52, 220, 123, 107, 201, 178, 104, 144, 173, 74, 117, 255, 70, 186, 33, 10, 8, 141, 245, 25,
+    84, 201, 251, 136, 219, 243, 174, 242, 58, 137, 145, 60, 122, 230, 171, 6, 26, 107, 207, 172, 45, 232, 94, 9, 36, 68, 186, 98, 154, 126, 214,
+    163, 168, 126, 224, 84, 117, 32, 5, 172, 80, 183, 156, 99, 26, 108, 48, 220, 218, 31, 25, 177, 215, 30, 222, 253, 215, 224, 203, 148, 131,
+    55, 174, 236, 31, 67, 78, 221, 123, 44, 210, 189, 46, 165, 47, 228, 169, 184, 173, 58, 212, 153, 164, 182, 37, 233, 155, 107, 0, 96, 146, 96,
+    255, 79, 33, 73, 24, 247, 103, 144, 171, 97, 6, 156, 143, 242, 186, 233, 180, 233, 146, 50, 107, 181, 243, 87, 232, 93, 27, 205, 140, 29, 171,
+    149, 4, 149, 73, 243, 53, 45, 150, 227, 73, 109, 221, 119, 227, 251, 73, 75, 180, 172, 85, 7, 169, 143, 149, 179, 180, 35, 187, 76, 109, 69,
+    240, 246, 169, 178, 149, 48, 180, 253, 76, 85, 140, 39, 74, 87, 20, 124, 130, 157, 205, 115, 146, 211, 22, 74, 6, 12, 140, 80, 209, 143, 30,
+    9, 190, 23, 161, 230, 33, 202, 253, 131, 229, 16, 188, 131, 165, 10, 196, 103, 40, 246, 115, 20, 20, 61, 70, 118, 195, 135, 20, 137, 33, 52,
+    77, 175, 15, 69, 12, 166, 73, 161, 186, 187, 156, 197, 177, 51, 131, 41, 133, 2, 3, 1, 0, 1, 163, 66, 48, 64, 48, 15, 6, 3, 85, 29, 19, 1, 1,
+    255, 4, 5, 48, 3, 1, 1, 255, 48, 14, 6, 3, 85, 29, 15, 1, 1, 255, 4, 4, 3, 2, 1, 134, 48, 29, 6, 3, 85, 29, 14, 4, 22, 4, 20, 78, 34, 84, 32,
+    24, 149, 230, 227, 110, 230, 15, 250, 250, 185, 18, 237, 6, 23, 143, 57, 48, 13, 6, 9, 42, 134, 72, 134, 247, 13, 1, 1, 11, 5, 0, 3, 130, 1,
+    1, 0, 96, 103, 40, 148, 111, 14, 72, 99, 235, 49, 221, 234, 103, 24, 213, 137, 125, 60, 197, 139, 74, 127, 233, 190, 219, 43, 23, 223, 176,
+    95, 115, 119, 42, 50, 19, 57, 129, 103, 66, 132, 35, 242, 69, 103, 53, 236, 136, 191, 248, 143, 176, 97, 12, 52, 164, 174, 32, 76, 132, 198,
+    219, 248, 53, 225, 118, 217, 223, 166, 66, 187, 199, 68, 8, 134, 127, 54, 116, 36, 90, 218, 108, 13, 20, 89, 53, 189, 242, 73, 221, 182, 31,
+    201, 179, 13, 71, 42, 61, 153, 47, 187, 92, 187, 181, 212, 32, 225, 153, 95, 83, 70, 21, 219, 104, 155, 240, 243, 48, 213, 62, 49, 226, 141,
+    132, 158, 227, 138, 218, 218, 150, 62, 53, 19, 165, 95, 240, 249, 112, 80, 112, 71, 65, 17, 87, 25, 78, 192, 143, 174, 6, 196, 149, 19, 23,
+    47, 27, 37, 159, 117, 242, 177, 142, 153, 161, 111, 19, 177, 65, 113, 254, 136, 42, 200, 79, 16, 32, 85, 215, 243, 20, 69, 229, 224, 68, 244,
+    234, 135, 149, 50, 147, 14, 254, 83, 70, 250, 44, 157, 255, 139, 34, 185, 75, 217, 9, 69, 164, 222, 164, 184, 154, 88, 221, 27, 125, 82, 159,
+    142, 89, 67, 136, 129, 164, 158, 38, 213, 111, 173, 221, 13, 198, 55, 125, 237, 3, 146, 27, 229, 119, 95, 118, 238, 60, 141, 196, 93, 86, 91,
+    162, 217, 102, 110, 179, 53, 55, 229, 50, 182];
 
 const OID_SIGNATURE_MD2_WITH_RSA: [i32; 7]      = [1, 2, 840, 113549, 1, 1, 2];
 const OID_SIGNATURE_MD5_WITH_RSA: [i32; 7]      = [1, 2, 840, 113549, 1, 1, 4];
@@ -1046,17 +1113,12 @@ impl Name {
     // relevant Name's fields, and the grouping is not preserved.
     pub fn fill_from_rdn_sequence(&mut self, rdns: &Vec<Vec<AttributeTypeAndValue>>) {
 
-        println!("fill_from_rdn_sequence rdn starts");
-        println!("fill_from_rdn_sequence rdns.len() is : {:?}", &rdns.len());
-
         for rdn in rdns {
-            println!("fill_from_rdn_sequence rdn is : {:?}", &rdn);
             if rdn.is_empty() {
                 continue;
             }
 
             for atv in rdn {
-                println!("fill_from_rdn_sequence atv is : {:?}", &atv);
                 self.names.push(atv.clone()); // Сохраняем атрибут
 
                 // Проверяем значение
@@ -1313,7 +1375,7 @@ fn check_signature(algo: &SignatureAlgorithm, signed: &Vec<u8>, signature: &Vec<
                 return false; // signaturePublicKeyAlgoMismatchError(pubKeyAlgo, pub)
             }
             if algo.is_rsa_pss() {
-                let pss_options = rsa::PSSOptions{salt_length: rsa::PSSSaltLengthEqualsHash, hash: 0 };
+                let pss_options = rsa::PSSOptions{salt_length: rsa::PSS_SALT_LENGTH_EQUALS_HASH, hash: 0 };
                 return rsa::verify_pss(rsa_pub_key, 256, signed, signature, &pss_options);
             } else {
                 // return rsa::verify_pkcs1v15(rsa_pub_key, hash_type, signed, signature);
@@ -1437,7 +1499,7 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
     // Чтение ASN.1 элемента
     let mut input1 = input.clone();
 
-    println!("parseCertificate input before read_asn1_element is : {:?}", &input);
+    //println!("parseCertificate input before read_asn1_element is : {:?}", &input);
 
     if !input.read_asn1_element(&mut input1, SEQUENCE) {
         //return Err("x509: malformed certificate".into());
@@ -1490,16 +1552,10 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
     }
 
     // Чтение серийного номера
-    //let mut serial = BigInt::default(); // Эквивалент создания нового большого числа
-    //if !tbs1.read_asn1_big_int(&mut serial) { // if !tbs1.read_asn1_integer(&mut tbs, &serial) {
-        //return Err("x509: malformed serial number".into());
-        //panic!("x509: malformed serial number");
-    //}
     match tbs1.read_asn1_big_int(){
         Some(serial) => cert.serial_number = serial,
         None => panic!("x509: malformed serial number"),
     }
-    //cert.serial_number = serial;
 
     // Чтение идентификатора алгоритма подписи
     let mut sig_ai_seq = ASN1String{ 0: Vec::new()};
@@ -1533,7 +1589,7 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
         //return Err("x509: malformed issuer".into());
         panic!("x509: malformed issuer");
     }
-    println!("parseCertificate issuer_seq.0 is : {:?}", &issuer_seq.0);
+    //println!("parseCertificate issuer_seq.0 is : {:?}", &issuer_seq.0);
     cert.raw_issuer = issuer_seq.0.clone();
     let issuer_rdns = parse_name(&mut issuer_seq);
     cert.issuer.fill_from_rdn_sequence(&issuer_rdns);
@@ -1557,7 +1613,6 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
 		panic!("x509: malformed issuer");
 	}
 	cert.raw_subject = subject_seq.0.clone();
-    println!("parseCertificate cert.raw_subject is : {:?}", &cert.raw_subject);
     let subject_rdns = parse_name(&mut subject_seq);
 
 	cert.subject.fill_from_rdn_sequence(&subject_rdns);
@@ -1588,7 +1643,7 @@ fn parse_certificate(der: &[u8]) -> Certificate { // fn parse_certificate(der: &
 	}
 	if cert.public_key_algorithm != PublicKeyAlgorithm::UnknownPublicKeyAlgorithm {
 
-        let public_key_info = PublicKeyInfo{algorithm: pk_ai, publicKey: spk};
+        let public_key_info = PublicKeyInfo{algorithm: pk_ai, public_key: spk};
         cert.public_key = parse_public_key(&public_key_info);
 		//cert.PublicKey, err = parsePublicKey(&publicKeyInfo{
 			//Algorithm: pkAI,
@@ -1702,10 +1757,10 @@ pub fn parse_name(raw: &mut ASN1String) -> Vec<Vec<AttributeTypeAndValue>> { // 
     }
 
     let mut rdn_seq: Vec<Vec<AttributeTypeAndValue>> = Vec::new(); // let mut rdn_seq: RDNSequence;
-    if !raw.0.is_empty(){
+    while !der.0.is_empty() {
         let mut rdn_set: Vec<AttributeTypeAndValue> = Vec::new(); // let mut rdn_set: RelativeDistinguishedNameSET;
         let mut set = ASN1String{ 0: Vec::new()};
-        if !raw.read_asn1(&mut set, SET) {
+        if !der.read_asn1(&mut set, SET) {
 			//return nil, errors.New("x509: invalid RDNSequence")
             panic!("x509: invalid RDNSequence");
 		}
@@ -1727,10 +1782,6 @@ pub fn parse_name(raw: &mut ASN1String) -> Vec<Vec<AttributeTypeAndValue>> { // 
                 panic!("x509: invalid RDNSequence: invalid attribute value");
             }
 
-            //(attr.Value, err) = parse_asn1_string(valueTag, rawValue);
-            //if err != nil {
-				//panic!("x509: invalid RDNSequence: invalid attribute value: %s", err);
-			//}
             attr.value = parse_asn1_string(value_tag, &raw_value.0).expect("x509: invalid RDNSequence: invalid attribute value: %s");
 
             rdn_set.push(attr);
@@ -2203,7 +2254,7 @@ fn parse_extension(der: &mut ASN1String) -> Extension { // fn parse_extension(de
 struct PublicKeyInfo {
 	//raw:       Vec<u8>,
 	algorithm: AlgorithmIdentifier,
-	publicKey: BitString,
+	public_key: BitString,
 }
 
 #[derive(Debug, PartialEq)]
@@ -2263,7 +2314,7 @@ fn named_curve_from_oid(oid: &Vec<i32>) -> Option<ecdsa::Curve> {
 fn parse_public_key(key_data: &PublicKeyInfo) -> PublicKey {
     let oid = &key_data.algorithm.algorithm;
 	let params = key_data.algorithm.parameters.clone().unwrap().clone();
-    let mut der = ASN1String{ 0: key_data.publicKey.right_align()}; // der = cryptobyte.String(key_data.publicKey.right_align() );
+    let mut der = ASN1String{ 0: key_data.public_key.right_align()}; // der = cryptobyte.String(key_data.publicKey.right_align() );
     match oid.as_slice() {
         val if val==OID_PUBLIC_KEY_RSA.as_slice() => {
             // RSA public keys must have a NULL in the parameters.
@@ -2294,7 +2345,7 @@ fn parse_public_key(key_data: &PublicKeyInfo) -> PublicKey {
                 panic!("x509: RSA public exponent is not a positive number");
             }
 
-            return PublicKey::RsaPublicKey((p));
+            return PublicKey::RsaPublicKey(p);
         },
         val if val==OID_PUBLIC_KEY_ECDSA.as_slice() => {
             let mut params_der = ASN1String{ 0: params.full_bytes.clone()};// cryptobyte.String(params.FullBytes)
@@ -2379,14 +2430,24 @@ pub fn check_certs(current_time: i64, check_sum: &[u8], certs_chain: &[u8], sign
     //if internalCert.NotAfter.Before(time.Now()) || internalCert.NotBefore.After(time.Now()) {
         //return false
     //}
+
+    //println!("check_certs leaf_cert.issuer.organization is : {:?}", leaf_cert.issuer.organization);
+
     let start_index = start_index + 3 + len_of_internal_cert + 2;
 
-    let len_of_root_cert = (certs_chain[start_index] as usize)*65536 + (certs_chain[start_index+1] as usize)*256 + (certs_chain[start_index+2] as usize);
-    println!("check_certs len_of_root_cert is : {:?}", len_of_root_cert);
-    let root_cert_slice = &certs_chain[start_index + 3..start_index + len_of_root_cert+3];
-    println!("check_certs root_cert_slice is : {:?}", root_cert_slice);
+    let root_cert = if start_index + 2 < certs_chain.len() {
+        let len_of_root_cert = (certs_chain[start_index] as usize)*65536 + (certs_chain[start_index+1] as usize)*256 + (certs_chain[start_index+2] as usize);
+        println!("check_certs len_of_root_cert is : {:?}", len_of_root_cert);
+        let root_cert_slice = &certs_chain[start_index + 3..start_index + len_of_root_cert+3];
+        println!("check_certs root_cert_slice is : {:?}", root_cert_slice);
+        //let root_cert = parse_certificate(root_cert_slice);
+        parse_certificate(root_cert_slice)
+    } else {
+        parse_certificate(&ROOT_FACEBOOK_CERT)
+    };
 
-    let root_cert = parse_certificate(root_cert_slice);
+
+
 
     /*if !leaf_cert.check_signature_from(&internal_cert){
         return None;
@@ -2452,7 +2513,7 @@ pub fn check_certs_with_fixed_root(current_time: i64, check_sum: &[u8], certs_ch
 
     let proposed_root_cert = parse_certificate(&root_cert_bytes);
 
-    if (proposed_root_cert.public_key==check_certs_result.unwrap()){
+    if proposed_root_cert.public_key==check_certs_result.unwrap() {
         return true;
     }
     return false;
@@ -2471,27 +2532,39 @@ pub fn check_certs_with_known_roots(current_time: i64, check_sum: &[u8], certs_c
     let google_cert_g2 = parse_certificate(&ROOT_GOOGLE_CERT_G2);
     let google_cert_g3 = parse_certificate(&ROOT_GOOGLE_CERT_G3);
     let google_cert_g4 = parse_certificate(&ROOT_GOOGLE_CERT_G4);
+    let kakao_cert = parse_certificate(&ROOT_KAKAO_CERT);
+    let facebook_cert = parse_certificate(&ROOT_FACEBOOK_CERT);
 
     let mut result = BigInt::from(0);
     let mut root_check = false;
-    if (google_cert_g1.public_key==root_public_key_from_server){
+    if google_cert_g1.public_key==root_public_key_from_server {
         root_check = true;
         result = google_cert_g1.serial_number;
     }
 
-    if (google_cert_g2.public_key==root_public_key_from_server){
+    if google_cert_g2.public_key==root_public_key_from_server {
         root_check = true;
         result = google_cert_g2.serial_number;
     }
 
-    if (google_cert_g3.public_key==root_public_key_from_server){
+    if google_cert_g3.public_key==root_public_key_from_server {
         root_check = true;
         result = google_cert_g3.serial_number;
     }
 
-    if (google_cert_g4.public_key==root_public_key_from_server){
+    if google_cert_g4.public_key==root_public_key_from_server {
         root_check = true;
         result = google_cert_g4.serial_number;
+    }
+
+    if kakao_cert.public_key==root_public_key_from_server {
+        root_check = true;
+        result = kakao_cert.serial_number;
+    }
+
+    if facebook_cert.public_key==root_public_key_from_server {
+        root_check = true;
+        result = facebook_cert.serial_number;
     }
 
     if !root_check {

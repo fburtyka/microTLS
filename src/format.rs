@@ -75,6 +75,10 @@ impl Record{
     // 03 03 (means TLS 1.2)
     // two bytes (length of message + 4)
 
+    pub fn spoken_len(&self) -> u16 {
+        (self.0[3] as u16)*256 + (self.0[4] as u16)
+    }
+
     pub fn rtype(&self) -> u8 {
         *self.0.first().expect("Record is empty")
     }
@@ -102,68 +106,37 @@ pub fn key_share(public_key: &[u8]) -> Vec<u8> {
         &u16_to_bytes(public_key.len() as u16).as_slice(),
         &public_key]
     )
-}/*
-
-pub fn extension(id: u16, contents: &[u8]) -> Vec<u8> {
-    concatenate(
-        u16(id).as_slice(),
-        u16(contents.len() as u16).as_slice(),
-        contents,
-    )
 }
 
-pub fn parse_server_hello<R: Read>(buf: &mut R) -> ServerHello {
-    let mut hello = ServerHello {
-        random: vec![0; 32],
-        public_key: Vec::new(),
-    };
+pub fn trunc_end_22(message: &Vec<u8>) -> Vec<u8> {
+    let mut ind = message.len() - 1;
+    while message[ind]!=22 && ind>0 {
+        ind = ind - 1;
+    }
+    message[..ind].to_vec()
+}
 
-    // Пропускаем handshake type & length
-    let _ = buf.take(4).bytes().collect::<Result<Vec<_>, _>>().unwrap();
-    // Пропускаем tls version
-    let _ = buf.take(2).bytes().collect::<Result<Vec<_>, _>>().unwrap();
+pub fn trunc_end_23(message: &Vec<u8>) -> Vec<u8> {
+    let mut ind = message.len() - 1;
+    while message[ind]!=23 && ind>0 {
+        ind = ind - 1;
+    }
+    message[..ind].to_vec()
+}
 
-    buf.read_exact(&mut hello.random).unwrap();
+pub fn contains_handshake_finish(message: &Vec<u8>) -> bool {
 
-    let session_id_length = buf.read_u8().unwrap() as usize;
-    let mut session_id = vec![0; session_id_length];
-    buf.read_exact(&mut session_id).unwrap();
-
-    // Пропускаем cipher suite
-    let _ = buf.take(2).bytes().collect::<Result<Vec<_>, _>>().unwrap();
-    // Пропускаем compression
-    let _ = buf.take(1).bytes().collect::<Result<Vec<_>, _>>().unwrap();
-
-    let extensions_length = buf.read_u16::<BigEndian>().unwrap();
-    let mut extensions_buf = &mut buf.take(extensions_length.into()).bytes().collect::<Result<Vec<_>, _>>().unwrap();
-
-    while !extensions_buf.is_empty() {
-        let typ = BigEndian::read_u16(&mut extensions_buf).unwrap(); // let typ = BigEndian::read_u16(&mut extensions_buf).unwrap();
-        let contents_length = BigEndian::read_u16(&mut extensions_buf).unwrap() as usize;
-        let mut contents = &mut extensions_buf.take(contents_length.into()).bytes().collect::<Result<Vec<_>, _>>().unwrap();
-
-        match typ {
-            0x0033 => {
-                // key share
-                let _ = BigEndian::read_u16(&mut contents).unwrap(); // x25519
-                let public_key_length = BigEndian::read_u16(&mut contents).unwrap() as usize;
-                hello.public_key = contents.take(public_key_length.into()).bytes().collect::<Result<Vec<_>, _>>().unwrap();
-
-                if !contents.is_empty() {
-                    eprintln!("didn't read all of key share");
-                }
-            }
-            0x002b => {
-                // игнорируем версию TLS
-            }
-            _ => {
-                eprintln!("unknown extension");
+    for i in 0.. message.len() {
+        if message[i]==20 {
+            if i+3<message.len() && message[i+1]==0 && message[i+2]==0 && message[i+3]==32 {
+                return true;
             }
         }
     }
+    return  false;
+}
 
-    hello
-}*/
+
 
 pub fn parse_server_hello(buf: & [u8]) -> ServerHello {
     let mut hello = ServerHello {
@@ -183,7 +156,7 @@ pub fn parse_server_hello(buf: & [u8]) -> ServerHello {
 
     if &current_pos + 32 < buf.len() { // if let Some(random_bytes) = buf.take(32) {
         let random_bytes = &buf[current_pos..current_pos+32];
-        hello.random = random_bytes.clone().try_into().unwrap(); //hello.random.extend_from_slice(random_bytes);
+        hello.random = random_bytes.try_into().unwrap(); //hello.random.extend_from_slice(random_bytes);
         current_pos = current_pos + 32;
 
         let session_id_len: u8 = buf[current_pos];// let session_id_len = buf.read_u8().expect("Can t read len of session ID");
@@ -252,15 +225,6 @@ pub fn read_record(reader: &mut TcpStream) -> Record { // pub fn read_record<R: 
 }
 
 
-//pub fn read_record<R: Read>(reader: &mut R) -> Record {
-    //let mut buf = vec![0; 5];
-    //reader.read_exact(&mut buf).unwrap();
-
-    //let length = BigEndian::read_u16(&buf[3..5]);
-    //let contents = read(length as usize
-        //concatenate(buf, contents)
-//}
-
 pub fn read(length: usize, reader: &mut dyn Read) -> Vec<u8> {
     let mut buf = Vec::new();
     while buf.len() < length {
@@ -298,38 +262,41 @@ pub fn extension(id: u16, contents: Vec<u8>) -> Vec<u8> {
 }
 
 pub fn extract_all_items(item: &str, data: &str) -> Vec<String> {
-    //let target = r#""n": ""#; // Подстрока для поиска
-    let target = format!("{}{}{}", r#"""#, item, r#"": ""#); // Подстрока для поиска
+    let target = format!("{}{}{}", r#"""#, item, r#"":"#); // Substring to search for
     let mut results = Vec::new();
     let mut start = 0;
 
     while let Some(start_index) = data[start..].find(&target) {
-        let start_pos = start + start_index + target.len(); // Позиция после подстроки "n": "
 
-        // Ищем конец подстроки
-        if let Some(end_index) = data[start_pos..].find('"') {
-            let end_pos = start_pos + end_index; // Конечная позиция
-            results.push(data[start_pos..end_pos].to_string()); // Добавляем подстроку в результаты
-            start = end_pos; // Обновляем стартовую позицию для следующего поиска
-        } else {
-            break; // Если кавычка не найдена, выходим из цикла
-        }
+        if let Some(open_quote_pos) = data[start + start_index + target.len()..].find('"'){
+            let start_pos = start + start_index + target.len() + open_quote_pos + 1; // Позиция после подстроки "n":"
+
+            // Ищем конец подстроки
+            if let Some(end_index) = data[start_pos..].find('"') {
+                let end_pos = start_pos + end_index; // Конечная позиция
+                results.push(data[start_pos..end_pos].to_string()); // Добавляем подстроку в результаты
+                start = end_pos; // Обновляем стартовую позицию для следующего поиска
+            } else {
+                break; // Если кавычка не найдена, выходим из цикла
+            }
+        } else {break};
+
     }
 
-    results // Возвращаем массив найденных подстрок
+    results // outputs an vector of found substrings
 }
 
 pub fn extract_expires(data: &str) -> i64 {
-    let target = r#"Expires: "#; // Подстрока для поиска
+    let target = r#"Date: "#; // let target = r#"Expires: "#; // substring we are looking for
     let start= data.find(target).unwrap();
-    let start_pos = start + target.len(); // Позиция после подстроки
+    let start_pos = start + target.len(); // position after substring
     let end = data[start_pos..].find('\n').unwrap();
-    let end_pos = start_pos + end; // Конечная позиция
+    let end_pos = start_pos + end; // position after substring
     let expires_time_string = data[start_pos..end_pos].to_string();
     println!("expires_time_string is : {:?}", &expires_time_string.trim());
 
     let dt: DateTime<FixedOffset> = DateTime::parse_from_rfc2822(&expires_time_string.trim()).unwrap();
     let timestamp = dt.timestamp();
     println!("UTC timestamp: {}", timestamp);
-    return timestamp;
+    return timestamp + 19800; // Date + 19800 = Expires (for Google)
 }

@@ -182,12 +182,13 @@ fn get_hash_prefix(hash: usize) -> Option<Vec<u8>> {
     }
 }
 
-// PSSSaltLengthAuto causes the salt in a PSS signature to be as large
+// PSS_SALT_LENGTH_AUTO causes the salt in a PSS signature to be as large
 // as possible when signing, and to be auto-detected when verifying.
-pub const PSSSaltLengthAuto: isize = 0;
-	// PSSSaltLengthEqualsHash causes the salt length to equal the length
-	// of the hash used in the signature.
-pub const PSSSaltLengthEqualsHash: isize = -1;
+pub const PSS_SALT_LENGTH_AUTO: isize = 0;
+
+// PSS_SALT_LENGTH_EQUALS_HASH causes the salt length to equal the length
+// of the hash used in the signature.
+pub const PSS_SALT_LENGTH_EQUALS_HASH: isize = -1;
 
 // PSSOptions contains options for creating and verifying PSS signatures.
 pub struct PSSOptions {
@@ -214,7 +215,7 @@ pub fn verify_pss(pub_key: &PublicKey, hash: usize, digest: &[u8], sig: &[u8], o
         return false; // "ErrVerification"
     }
 
-    if opts.salt_length < PSSSaltLengthEqualsHash {
+    if opts.salt_length < PSS_SALT_LENGTH_EQUALS_HASH {
 		return false; // invalidSaltLenErr;
 	}
     let em_bits = pub_key.n.bits() - 1;
@@ -242,7 +243,7 @@ pub fn verify_pss(pub_key: &PublicKey, hash: usize, digest: &[u8], sig: &[u8], o
 //fn emsa_pss_verify(m_hash: &[u8], em: &[u8], em_bits: usize, mut s_len: isize, hash: hash.Hash) -> bool {
 fn emsa_pss_verify(m_hash: &[u8], em: &[u8], em_bits: usize, mut s_len: isize, hash: u16) -> bool {
     let h_len = hash as isize; //hash.Size();
-	if s_len == PSSSaltLengthEqualsHash {
+	if s_len == PSS_SALT_LENGTH_EQUALS_HASH {
 		s_len = h_len;
 	}
 	let em_len = (em_bits + 7) / 8;
@@ -298,7 +299,7 @@ fn emsa_pss_verify(m_hash: &[u8], em: &[u8], em_bits: usize, mut s_len: isize, h
 	db[0] &= bit_mask;
 
     // If we don't know the salt length, look for the 0x01 delimiter.
-	if s_len == PSSSaltLengthAuto as usize {
+	if s_len == PSS_SALT_LENGTH_AUTO as usize {
 		//let ps_len = bytes.IndexByte(db, 0x01);
         let mut ps_len: isize = -1;
         for i in 0..db.len() {

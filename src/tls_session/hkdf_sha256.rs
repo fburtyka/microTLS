@@ -1,5 +1,5 @@
 
-use std::error::Error;
+//use std::error::Error;
 //use std::io::{self, Read};
 //use std::marker::PhantomData;
 
@@ -363,7 +363,7 @@ fn block(dig: &mut Digest, p: &[u8]) {
         let (mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h) =
             (h0, h1, h2, h3, h4, h5, h6, h7);
         for i in 0..64 {
-            let t1 = h.wrapping_add((rotate_left_32(e, -6) ^ rotate_left_32(e, -11) ^ rotate_left_32(e, -25)))
+            let t1 = h.wrapping_add(rotate_left_32(e, -6) ^ rotate_left_32(e, -11) ^ rotate_left_32(e, -25))
                 .wrapping_add((e & f) ^ (!e & g))
                 .wrapping_add(K[i])
                 .wrapping_add(w[i]);

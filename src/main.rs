@@ -90,6 +90,13 @@ fn mainOffline() {
 
 }
 
+fn mainReadDer() {
+    let mut file = File::open("certificate.der").unwrap();
+    let mut buffer = [0u8; 1400];
+    file.read(&mut buffer);
+    println!("buffer is : {:?}", buffer);
+}
+
 fn main() {
     // get("jvns.ca");
     // get("https://www.googleapis.com/oauth2/v3/certs");
@@ -103,15 +110,21 @@ fn get(domain: &str) {
     let mut session = Session::new(String::from(domain)).expect("Failed to connect to domain");
     session.connect();
 
+    let req = match domain {
+        "www.googleapis.com" => format!("GET /oauth2/v3/certs HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n", domain),
+        "kauth.kakao.com" => format!("GET /.well-known/jwks.json HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n", domain),
+        "www.facebook.com" => format!("GET /.well-known/oauth/openid/jwks HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n", domain),
+        _ => format!("GET / HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n", domain)
+    };
     /*let req = format!(
         "GET /.well-known/jwks.json HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
         domain
-    );*/
+    );
 
     let req = format!(
         "GET /oauth2/v3/certs HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
         domain
-    );
+    );*/
     println!("req.as_bytes() is : {:?}", req.as_bytes());
     session.send_data(req.as_bytes());// session.send_data(req.as_bytes()).expect("Failed to send data");
 
@@ -127,18 +140,28 @@ fn get(domain: &str) {
     let mut serialized_session = session.serialize();
     println!("serialized_session is : {:?}", serialized_session);
 
-    let current_timestamp = 1000u32;// SystemTime::now()
+    let current_timestamp = 1752495433u32;// SystemTime::now()
     let mut data: Vec<u8> = Vec::new();
     append_uint32(&mut data, current_timestamp);
-    //let mut kid = vec![142, 143, 200, 229, 86, 247, 167, 109, 8, 211, 88, 41, 214, 249, 10, 226, 225, 44, 253, 13];//vec![0u8; 20];
-    let mut kid = hex::decode("8e8fc8e556f7a76d08d35829d6f90ae2e12cfd0d").unwrap();
-    //let mut kidKakao = hex::decode("9f252dadd5f233f93d2fa528d12fea").unwrap();
-    let root_cert = tls_session::get_root_cert_google_g1();
-    let mut len_of_root_cert = vec![5u8, 91u8];
+    //let mut kidGoogle = vec![142, 143, 200, 229, 86, 247, 167, 109, 8, 211, 88, 41, 214, 249, 10, 226, 225, 44, 253, 13];//vec![0u8; 20];
+    let mut kid = hex::decode("8e8fc8e556f7a76d08d35829d6f90ae2e12cfd0d").unwrap(); //google
+    //let mut kid = hex::decode("3f96980381e451efad0d2ddd30e3d3").unwrap(); // kakao
+    //let mut kidFacebook = hex::decode("e4d2003ea7326bfdadbac384ca601fef723e40ae").unwrap(); // facebook
+
+
+
+    let mut root_cert = match domain {
+        "www.googleapis.com" => tls_session::get_root_cert_google_g1().to_vec(),
+        "kauth.kakao.com" => tls_session::get_root_cert_kakao().to_vec(),
+        _ => tls_session::get_root_cert_facebook().to_vec(),
+    };
+
+    let mut len_of_root_cert = format::u16_to_bytes(root_cert.len() as u16).to_vec();
+    println!("len_of_root_cert is : {:?}", len_of_root_cert);
     data.push(kid.len() as u8);
     data.append(&mut kid);
     data.append(&mut len_of_root_cert);
-    data.append(&mut root_cert.to_vec());
+    data.append(&mut root_cert);
     data.append(&mut serialized_session);
 
     println!("THE data is : {:?}", data);
