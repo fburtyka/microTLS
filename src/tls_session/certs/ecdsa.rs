@@ -23,6 +23,10 @@ pub struct Curve {
 }
 
 impl Curve {
+    pub fn n_minus2(&self) -> BigInt{
+        &self.n - BigInt::from(2)
+    }
+
     pub fn params(&self) -> &Self {
         self
     }
@@ -55,7 +59,7 @@ impl Curve {
             return false;
         }
 
-        let y2 = y * y % &self.p;
+        let y2 = (y * y).mod_floor(&self.p);
 
         self.polynomial(x) == y2
     }
@@ -75,18 +79,21 @@ impl Curve {
         }
 
         let z_inv = mod_inverse(&z, &self.p).unwrap(); // Assuming BigInt supports inverse
-        let z_inv_sq = (z_inv.clone() * z_inv.clone()) % &self.p;
+        let z_inv_sq = (&z_inv * &z_inv).mod_floor(&self.p);
 
-        let x_out = x * z_inv_sq.clone() % &self.p;
-        let z_inv_sq_mul = z_inv_sq * z_inv % &self.p;
-        let y_out = y * z_inv_sq_mul % &self.p;
+        let x_out = (x * &z_inv_sq).mod_floor(&self.p);
+        let z_inv_sq_mul = (z_inv_sq * z_inv).mod_floor(&self.p);
+        let y_out = (y * z_inv_sq_mul).mod_floor(&self.p);
 
         (x_out, y_out)
     }
 
     pub fn add(&self, x1: &BigInt, y1: &BigInt, x2: &BigInt, y2: &BigInt) -> (BigInt, BigInt) {
-        if matches_specific_curve(self).is_some() {
-            return matches_specific_curve(self).unwrap().add(x1, y1, x2, y2);
+        //if matches_specific_curve(self).is_some() {
+            //return matches_specific_curve(self).unwrap().add(x1, y1, x2, y2);
+        //}
+        if !matches_specific_curve(self).is_some() {
+            panic!("unknown curve");
         }
 
         panic_if_not_on_curve(self, x1, y1);
@@ -103,33 +110,43 @@ impl Curve {
         let mut x3 = BigInt::zero();
         let mut y3 = BigInt::zero();
         let mut z3 = BigInt::zero();
+        //println!("add_jacobian in x1 is : {:?}", &x1.to_string());
+        //println!("add_jacobian in y1 is : {:?}", &y1.to_string());
+        //println!("add_jacobian in z1 is : {:?}", &z1.to_string());
+        //println!("add_jacobian in x2 is : {:?}", &x2.to_string());
+        //println!("add_jacobian in y2 is : {:?}", &y2.to_string());
+        //println!("add_jacobian in z2 is : {:?}", &z2.to_string());
 
         if z1.is_zero() {
             return (x2.clone(), y2.clone(), z2.clone());
         }
         if z2.is_zero() {
+            //println!("add_jacobian x3 is : {:?}", &x1.to_string());
+            //println!("add_jacobian y3 is : {:?}", &y1.to_string());
+            //println!("add_jacobian z3 is : {:?}", &z1.to_string());
             return (x1.clone(), y1.clone(), z1.clone());
         }
 
-        let z1z1 = z1 * z1 % &self.p;
-        let z2z2 = z2 * z2 % &self.p;
+        let z1z1 = (z1 * z1).mod_floor(&self.p);
+        let z2z2 = (z2 * z2).mod_floor(&self.p);
 
-        let u1 = x1 * z2z2.clone() % &self.p;
-        let u2 = x2 * z1z1.clone() % &self.p;
-        let mut h = u2 - u1.clone();
+        let u1 = (x1 * &z2z2).mod_floor(&self.p);
+        let u2 = (x2 * &z1z1).mod_floor(&self.p);
+        let mut h = u2 - &u1;
 
         if h.is_negative() {
             h += &self.p;
         }
+        //println!("add_jacobian h is : {:?}", &h.to_string());
 
         let x_equal = h.is_zero();
-        let i = h.clone() << 1;
-        let i_sq = i.clone() * i.clone() % &self.p;
-        let j = &h * i_sq % &self.p;
+        let i = &h << 1;
+        let i_sq = &i * &i;
+        let j = &h * &i_sq;
 
-        let mut s1 = y1 * z2 * &z2z2 % &self.p;
-        let s2 = y2 * z1 * z1z1.clone() % &self.p;
-        let mut r = s2 - s1.clone();
+        let mut s1 = (y1 * z2 * &z2z2).mod_floor(&self.p);
+        let s2 = (y2 * z1 * &z1z1).mod_floor(&self.p);
+        let mut r = s2 - &s1;
 
         if r.is_negative() {
             r += &self.p;
@@ -141,79 +158,96 @@ impl Curve {
         }
 
         r <<= 1;
-        let v = u1 * i;
+        //println!("add_jacobian r is : {:?}", &r.to_string());
+        let v = u1 * &i_sq;
 
-        x3 = r.clone();
-        x3 = x3.clone() * x3 % &self.p; // x3 = r^2
-        x3 = (x3 - &j - &v - &v) % &self.p; // x3 = r^2 - j - 2v
+        x3 = (&r * &r - &j - &v - &v).mod_floor(&self.p); // x3 = r^2 - j - 2v
 
-        y3 = r * (v - &x3) % &self.p; // y3 = r(v - x3)
+        //y3 = r * (v - &x3) % &self.p; // y3 = r(v - x3)
         s1 = s1 * j << 1; // s1 = 2 * y1 * z2 * z2z2
-        y3 = (y3 - s1) % &self.p;
+        y3 = (r * (v - &x3) - s1).mod_floor(&self.p);
 
-        z3 = (z1 + z2) % &self.p; // z3 = z1 + z2
-        z3 = (z3.clone() * z3.clone() - &z1z1 - &z2z2) % &self.p; // z3 = (z1 + z2)^2 - z1^2 - z2^2
-        z3 = (z3 * &h) % &self.p; // z3 *= h
+        z3 = z1 + z2;
+        z3 = (h * (&z3 * &z3 - &z1z1 - &z2z2)).mod_floor(&self.p); // z3 = h*( (z1 + z2)^2 - z1^2 - z2^2)
 
+        //println!("add_jacobian out x3 is : {:?}", &x3.to_string());
+        //println!("add_jacobian out y3 is : {:?}", &y3.to_string());
+        //println!("add_jacobian out z3 is : {:?}", &z3.to_string());
         (x3, y3, z3)
     }
 
     pub fn double_jacobian(&self, x: &BigInt, y: &BigInt, z: &BigInt) -> (BigInt, BigInt, BigInt) {
-        let delta = (z * z) % &self.p;
-        let gamma = (y * y) % &self.p;
+        let delta = (z * z).mod_floor(&self.p);
+        let gamma = (y * y).mod_floor(&self.p);
 
-        let mut alpha = (x - &delta) % &self.p;
+        let mut alpha = x - &delta;
         if alpha.is_negative() {
             alpha += &self.p;
         }
+        //println!("double_jacobian input x is : {:?}", &x.to_string());
+        //println!("double_jacobian input y is : {:?}", &y.to_string());
+        //println!("double_jacobian input z is : {:?}", &z.to_string());
 
-        let alpha2 = (x + &delta) % &self.p;
-        alpha = (alpha * &alpha2) % &self.p;
-        let mut alpha_lsh = (&alpha << 1) % &self.p; // Alpha << 1 represents 2α
-        alpha = (alpha + &alpha_lsh) % &self.p;
+        //println!("double_jacobian delta is : {:?}", &delta.to_string());
+        //println!("double_jacobian gamma is : {:?}", &gamma.to_string());
 
-        let beta = (alpha2 * &gamma) % &self.p;
+        let alpha2 = (x + &delta).mod_floor(&self.p);
+        alpha = alpha * &alpha2;
+        let mut alpha_lsh = (&alpha << 1); // Alpha << 1 represents 2α
+        alpha = &alpha + &alpha_lsh;
 
-        let mut x3 = (&alpha * &alpha) % &self.p;
-        let beta8 = (&beta << 3) % &self.p; // (beta * 2^3) % p
-        x3 = (x3 - &beta8) % &self.p;
+        let beta = x * &gamma;
+        //println!("double_jacobian beta is : {:?}", &beta.to_string());
+
+        let mut x3 = &alpha * &alpha;
+        let beta8 = (&beta << 3).mod_floor(&self.p); // (beta * 2^3) % p
+        x3 = x3 - &beta8;
         if x3.is_negative() {
             x3 += &self.p;
         }
+        x3 = x3.mod_floor(&self.p);
+        //println!("double_jacobian beta8 is : {:?}", &beta8.to_string());
 
-        let mut z3 = (y + z) % &self.p;
-        z3 = (&z3 * &z3) % &self.p;
-        z3 = (&z3 - &gamma) % &self.p;
+        let mut z3 = y + z;
+        z3 = &z3 * &z3 - &gamma;
         if z3.is_negative() {
             z3 += &self.p;
         }
-        z3 = (z3 - &delta) % &self.p;
+        z3 = z3 - &delta;
         if z3.is_negative() {
             z3 += &self.p;
         }
+        z3 = z3.mod_floor(&self.p);
 
-        let mut beta_double = (beta << 2) % &self.p;
-        beta_double = (beta_double - &x3) % &self.p;
+        let mut beta_double = beta << 2;
+        beta_double = beta_double - &x3;
         if beta_double.is_negative() {
             beta_double += &self.p;
         }
 
-        let mut y3 = (alpha * beta_double) % &self.p;
+        let mut y3 = alpha * beta_double;
 
-        let gamma_sq = (&gamma * &gamma) % &self.p;
-        let gamma_lsh = (gamma_sq << 3) % &self.p;
+        let gamma_sq = &gamma * &gamma;
+        let gamma_lsh = (gamma_sq << 3).mod_floor(&self.p);
 
-        y3 = (y3 - &gamma_lsh) % &self.p;
+        y3 = y3 - &gamma_lsh;
         if y3.is_negative() {
             y3 += &self.p;
         }
+        y3 = y3.mod_floor(&self.p);
+        //println!("double_jacobian res x3 is : {:?}", &x3.to_string());
+        //println!("double_jacobian res y3 is : {:?}", &y3.to_string());
+        //println!("double_jacobian res z3 is : {:?}", &z3.to_string());
 
         (x3, y3, z3)
     }
 
     pub fn scalar_mult(&self, bx: &BigInt, by: &BigInt, k: &[u8]) -> (BigInt, BigInt) {
-        if let Some(specific) = matches_specific_curve(self) {
-            return specific.scalar_mult(bx, by, k);
+        //if let Some(specific) = matches_specific_curve(self) {
+            //return specific.scalar_mult(bx, by, k);
+        //}
+        if !matches_specific_curve(self).is_some() {
+            panic!("unknown curve");
         }
 
         panic_if_not_on_curve(self, bx, by);
@@ -224,22 +258,37 @@ impl Curve {
         let mut z = BigInt::zero();
 
         for &byte in k {
+            println!("scalar_mult x is : {:?}", &x.to_string());
+        println!("scalar_mult y is : {:?}", &y.to_string());
+        println!("scalar_mult z is : {:?}", &z.to_string());
             let mut byte = byte;
             for _ in 0..8 {
                 (x, y, z) = self.double_jacobian(&x, &y, &z);
+                //println!("after double_jacobian");
                 if byte & 0x80 != 0 {
                     (x, y, z) = self.add_jacobian(bx, by, &bz, &x, &y, &z);
                 }
                 byte <<= 1;
             }
+            //panic!("end loop");
         }
+        println!("scalar_mult x is : {:?}", &x.to_bytes_be());
+        println!("scalar_mult y is : {:?}", &y.to_bytes_be());
+        println!("scalar_mult z is : {:?}", &z.to_bytes_be());
+        let res = self.affine_from_jacobian(&x, &y, &z);
+        println!("scalar_mult res x is : {:?}", &res.0.to_string());
+        println!("scalar_mult res y is : {:?}", &res.1.to_string());
 
-        self.affine_from_jacobian(&x, &y, &z)
+        res//self.affine_from_jacobian(&x, &y, &z)
     }
 
     pub fn scalar_base_mult(&self, k: &[u8]) -> (BigInt, BigInt) {
-        if let Some(specific) = matches_specific_curve(self) {
-            return specific.scalar_base_mult(k);
+        //if let Some(specific) = matches_specific_curve(self) {
+            //return specific.scalar_base_mult(k);
+        //}
+        println!("scalar_base_mult k is : {:?}", &k);
+        if !matches_specific_curve(self).is_some() {
+            panic!("unknown curve");
         }
 
         self.scalar_mult(&self.gx, &self.gy, k)
@@ -505,7 +554,7 @@ pub fn verify(pub_key: &PublicKey, hash: &[u8], r: &BigInt, s: &BigInt) -> bool 
         return false;
     }
 
-    verify_nistec(pub_key, hash, &r, &s)
+    verify_nistec(pub_key, &hash, &r, &s)
     //match encode_signature(&r.to_bytes_be().1, &s.to_bytes_be().1) {
         //Ok(sig) => verify_asn1(pub_key, hash, &sig),
         //Err(_) => false,
@@ -515,6 +564,9 @@ pub fn verify(pub_key: &PublicKey, hash: &[u8], r: &BigInt, s: &BigInt) -> bool 
 pub fn verify_nistec(pub_key: &PublicKey, hash: &[u8], r: &BigInt, s: &BigInt) -> bool {
     let c = &pub_key.curve; // Получаем кривую
     let n = &c.params().n; // Получаем порядок
+    println!("verify_nistec n is : {:?}", &n.to_string());
+    println!("verify_nistec r is : {:?}", &r.to_string());
+    println!("verify_nistec s is : {:?}", &s.to_string());
 
     if r.is_zero() || s.is_zero() {
         return false;
@@ -526,9 +578,12 @@ pub fn verify_nistec(pub_key: &PublicKey, hash: &[u8], r: &BigInt, s: &BigInt) -
 
     // SEC 1, Version 2.0, Section 4.1.4
     let e = hash_to_int(hash, c); // Преобразуем хеш в целое число
+    println!("verify_nistec e is : {:?}", &e.to_string());
     let w = mod_inverse(s, n).unwrap(); // Находим обратное значение s по модулю N
+    //let w = s.modpow(&c.n_minus2(), &c.n);//s^c.n_minus2()%c.n
+    println!("verify_nistec w is : {:?}", &w.to_string());
 
-    let mut u1 = e * w.clone();
+    let mut u1 = e * &w;
     u1 = u1 % n; // u1 = e  w mod N
     let mut u2 = r * w;
     u2 = u2 % n; // u2 = r  w mod N
@@ -557,22 +612,30 @@ pub fn mod_inverse(g: &BigInt, n: &BigInt) -> Option<BigInt> {
         g = g.add(&n); // g = g.modulus(&n)?;
     }
 
-    let (d, x) = gcd(&g, &n); // Вызов GCD
+    println!("mod_inverse g is : {:?}", &g.to_string());
+    println!("mod_inverse n is : {:?}", &n.to_string());
 
+    //let (d, x) = gcd(&g, &n); // Вызов GCD
+
+    //println!("mod_inverse d is : {:?}", &d.to_string());
+    //println!("mod_inverse x is : {:?}", &x.to_string());
     // если и только если d == 1, g и n взаимно просты
-    if d != BigInt::from(1) {
-        return None;
-    }
+    //if d != BigInt::from(1) {
+        //return None;
+    //}
 
     // x и y таковы, что g * x + n * y = 1, значит x - обратный элемент.
     // но он может быть отрицательным, поэтому преобразуем в диапазон 0 <= z < |n|
-    if x.sign()==Sign::Minus { // if x.neg {
-        Some(x.add(&n))
-    } else {
-        Some(x) //self.set(&x);
-    }
+    //if x.sign()==Sign::Minus { // if x.neg {
+        //Some(x.add(&n))
+    //} else {
+        //Some(x) //self.set(&x);
+    //}
 
     //Some(self.clone())
+    let exponent = &n - BigInt::from(2);
+    let res = g.modpow(&exponent, &n);
+    Some(res)
 }
 
 // Находит НОД (наибольший общий делитель) a и b.
@@ -606,3 +669,44 @@ pub fn gcd(a: &BigInt, b: &BigInt) -> (BigInt, BigInt) { // pub fn gcd(a: &BigIn
     //(a, x0, y0) // Возвращаем НОД и коэффициенты x и y
     (x0, y0) // коэффициенты x и y
 }
+
+/*
+#[test]
+fn test_double_jacobian() {
+    let curve = p384();
+    let x = BigInt::from_str("26247035095799689268623156744566981891852923491109213387815615900925518854738050089022388053975719786650872476732087").unwrap();
+    let y = BigInt::from_str("8325710961489029985546751289520108179287853048861315594709205902480503199884419224438643760392947333078086511627871").unwrap();
+    let z = BigInt::from(1);
+
+    let (x3,y3,z3) = curve.double_jacobian(&x,&y,&z);
+
+    let x3_etalon = BigInt::from_str("35254588115396988955378197439342114529508362576794953367037349023580068545475310637577759689702303807277194321070996").unwrap();
+    let y3_etalon = BigInt::from_str("14094927097322068288859836144661955775226011269885396289302053680701902356248349321806374990225887525221282397320570").unwrap();
+    let z3_etalon = BigInt::from_str("16651421922978059971093502579040216358575706097722631189418411804961006399768838448877287520785894666156173023255742").unwrap();
+
+    assert_eq!(x3_etalon, x3);
+    assert_eq!(y3_etalon, y3);
+    assert_eq!(z3_etalon, z3);
+}
+
+#[test]
+fn test_add_jacobian() {
+    let curve = p384();
+    let x1 = BigInt::from_str("26247035095799689268623156744566981891852923491109213387815615900925518854738050089022388053975719786650872476732087").unwrap();
+    let y1 = BigInt::from_str("8325710961489029985546751289520108179287853048861315594709205902480503199884419224438643760392947333078086511627871").unwrap();
+    let z1 = BigInt::from(1);
+
+    let x2 = BigInt::from_str("17549184052600415924351814731074045164430055439897800327065432716777591870838471882150875771741479392708779961262208").unwrap();
+    let y2 = BigInt::from_str("38508016772860641790709056645577873335787028472301105760478624707293866642093311384364675723978256046737804762199491").unwrap();
+    let z2 = BigInt::from_str("28986197684086233855442932314423481175012902182862363167728805938355119231231158683800212527641343037948702042570713").unwrap();
+
+    let (x3,y3,z3) = curve.add_jacobian(&x1,&y1,&z1,&x2,&y2,&z2);
+
+    let x3_etalon = BigInt::from_str("37032233919799027217792600389908037224866763226472163130083538385333463986623356906652246482708910538174997604389221").unwrap();
+    let y3_etalon = BigInt::from_str("18678569364993829981437875750962495164360459532287444315756417323009143499143822704516148389941529345230607563529383").unwrap();
+    let z3_etalon = BigInt::from_str("25077062041865062199495500605740984322197435227715827353283185138037847545165667204480039398883209590095840149079128").unwrap();
+
+    assert_eq!(x3_etalon, x3);
+    assert_eq!(y3_etalon, y3);
+    assert_eq!(z3_etalon, z3);
+}*/

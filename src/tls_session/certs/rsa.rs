@@ -97,19 +97,30 @@ fn encrypt(pubkey: &PublicKey, plaintext: &[u8]) -> Vec<u8> {
     //let result = Nat::new().exp_short_var_time(&m, e, &n);
     //result.bytes(&n) // Ok(result.bytes(&n)) //return bigmod.NewNat().ExpShortVarTime(m, e, N).Bytes(N), nil
 
-    let base = BigInt::from_bytes_be(Sign::Plus, &plaintext);
-    let modulus = &pubkey.n;
-    let exponent = BigInt::from(pubkey.e.clone());
+    let base = BigUint::from_bytes_be(&plaintext); //let base = BigInt::from_bytes_be(Sign::Plus, &plaintext);
+    println!("rsa encrypt base is : {:?}", base.to_string());
+    let modulus = &pubkey.n.to_biguint().unwrap(); //let modulus = &pubkey.n;
+    println!("rsa encrypt modulus is : {:?}", modulus.to_string());
+    let exponent= BigInt::from(pubkey.e.clone()).to_biguint().unwrap();//let exponent = BigInt::from(pubkey.e.clone());
+    println!("rsa encrypt exponent is : {:?}", exponent.to_string());
 
-    let result = base.modpow(&exponent, modulus);
+    let result = base.modpow(&exponent, &modulus);
+    println!("rsa encrypt result is : {:?}", result.to_string());
 
-    result.to_signed_bytes_be()
+    result.to_bytes_be()//result.to_signed_bytes_be()
 }
 
 // fn verify_pkcs1v15(pub_key: &PublicKey, hash: usize, hashed: &[u8], sig: &[u8]) -> Result<(), Box<dyn Error>> {
 pub fn verify_pkcs1v15(pub_key: &PublicKey, hash: usize, hashed: &[u8], sig: &[u8]) -> bool {
+    println!("verify_pkcs1v15 pub_key is : {:?}", pub_key);
+    println!("verify_pkcs1v15 hash is : {:?}", hash);
+    println!("verify_pkcs1v15 hashed is : {:?}", hashed);
+    println!("verify_pkcs1v15 sig is : {:?}", sig);
     let (hash_len, prefix) = pkcs1v15_hash_info(hash, hashed.len()); // let (hash_len, prefix) = pkcs1v15_hash_info(hash, hashed.len())?;
-    let t_len = &prefix.clone().unwrap().len() + hash_len;
+    let t_len = &prefix.clone().unwrap().len() + hash_len/8;
+    println!("verify_pkcs1v15 hash_len is : {:?}", hash_len);
+    println!("verify_pkcs1v15 t_len is : {:?}", t_len);
+    println!("verify_pkcs1v15 prefix is : {:?}", prefix);
     let k = pub_key.size();
 
     if k < t_len + 11 {
@@ -121,14 +132,30 @@ pub fn verify_pkcs1v15(pub_key: &PublicKey, hash: usize, hashed: &[u8], sig: &[u
     }
 
     let em = encrypt(pub_key, sig); // let em = encrypt(pub_key, sig)?;
+    println!("verify_pkcs1v15 em is : {:?}", em);
 
-    let mut ok = em[0] == 0 && em[1] == 1;
-    ok &= (&em[k - hash_len..k] == hashed);
-    ok &= (&em[k - t_len..(k - hash_len)] == &prefix.unwrap());
-    ok &= (em[k - t_len - 1] == 0);
+    //let mut ok = em[0] == 0 && em[1] == 1;
+    //println!("verify_pkcs1v15 ok is : {:?}", ok);
+    //ok &= &em[k - hash_len/8..k] == hashed;
+    //println!("verify_pkcs1v15 ok is : {:?}", ok);
+    //ok &= &em[k - t_len..(k - hash_len/8)] == &prefix.unwrap();
+    //println!("verify_pkcs1v15 ok is : {:?}", ok);
+    //ok &= em[k - t_len - 1] == 0;
+    //println!("verify_pkcs1v15 ok is : {:?}", ok);
+
+    let mut ok = em[0] == 1;
+    ok &= &em[k - 1 - hash_len/8..k -1] == hashed;
+    println!("verify_pkcs1v15 ok is : {:?}", ok);
+    ok &= &em[k - 1 - t_len..(k - 1 - hash_len/8)] == &prefix.unwrap();
+    println!("verify_pkcs1v15 ok is : {:?}", ok);
+    ok &= em[k - 1 - t_len - 1] == 0;
+
+    //for i in 2..(k - t_len - 1) {
+        //ok &= em[i] == 0xff;
+    //}
 
     for i in 2..(k - t_len - 1) {
-        ok &= (em[i] == 0xff);
+        ok &= em[i-1] == 0xff;
     }
 
     if !ok {
@@ -146,7 +173,7 @@ fn pkcs1v15_hash_info(hash: usize, in_len: usize) -> (usize, Option<Vec<u8>>) { 
     }
 
     //let hash_len = hash.size();
-    if in_len != hash { // if in_len != hash_len {
+    if in_len != hash/8 { // if in_len != hash_len {
         panic!("crypto/rsa: input must be hashed message");//return Err("crypto/rsa: input must be hashed message".into());
     }
 
@@ -210,8 +237,14 @@ pub struct PSSOptions {
 // argument may be nil, in which case sensible defaults are used. opts.Hash is
 // ignored.
 pub fn verify_pss(pub_key: &PublicKey, hash: usize, digest: &[u8], sig: &[u8], opts: &PSSOptions) -> bool {
+    println!("verify_pss pub_key.e is : {:?}", pub_key.e);
+    println!("verify_pss pub_key.n is : {:?}", pub_key.n.to_string());
+    println!("verify_pss hash is : {:?}", hash);
+    println!("verify_pss digest is : {:?}", digest);
+    println!("verify_pss sig is : {:?}", sig);
 
     if sig.len() != pub_key.size(){
+        println!("verify_pss sig.len() != pub_key.size() ");
         return false; // "ErrVerification"
     }
 
@@ -228,7 +261,10 @@ pub fn verify_pss(pub_key: &PublicKey, hash: usize, digest: &[u8], sig: &[u8], o
 	// then strip leading zeroes if necessary. This only happens for weird
 	// modulus sizes anyway.
 
-    for i in 0..em.len() { // while em.len() > em_len && em.len() > 0 {
+    println!("em_len is : {:?}", em_len);
+    println!("verify_pss em is : {:?}", em);
+
+    for i in em_len..em.len() { // while em.len() > em_len && em.len() > 0 {
         if em[i] != 0u8 {
             return false; // ErrVerification
         }
@@ -237,6 +273,7 @@ pub fn verify_pss(pub_key: &PublicKey, hash: usize, digest: &[u8], sig: &[u8], o
         }
     }
 
+    println!("verify_pss just before emsa_pss_verify");
     return emsa_pss_verify(digest, &em, em_bits, opts.salt_length, 32); // return emsa_pss_verify(digest, &em, em_bits, opts.salt_length, hash.New());
 }
 

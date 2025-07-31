@@ -7,7 +7,6 @@ pub mod network;
 use tls_session::Session;
 
 use std::io::{self, Write, BufRead, Read};
-use std::net::TcpStream;
 use std::fs::File;
 
 use hex::FromHex;
@@ -144,7 +143,7 @@ fn get(domain: &str) {
     let mut data: Vec<u8> = Vec::new();
     append_uint32(&mut data, current_timestamp);
     //let mut kidGoogle = vec![142, 143, 200, 229, 86, 247, 167, 109, 8, 211, 88, 41, 214, 249, 10, 226, 225, 44, 253, 13];//vec![0u8; 20];
-    let mut kid = hex::decode("8e8fc8e556f7a76d08d35829d6f90ae2e12cfd0d").unwrap(); //google
+    let mut kid = hex::decode("dd5301204fc1d6a0d68c783a35cc9c10b25e1f4a").unwrap(); //google
     //let mut kid = hex::decode("3f96980381e451efad0d2ddd30e3d3").unwrap(); // kakao
     //let mut kidFacebook = hex::decode("e4d2003ea7326bfdadbac384ca601fef723e40ae").unwrap(); // facebook
 
@@ -169,6 +168,3 @@ fn get(domain: &str) {
 
     println!("public_key_data is : {:?}", public_key_data);
 }
-
-
-

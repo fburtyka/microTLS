@@ -1,4 +1,4 @@
-use std::io::{self, Read};
+use std::io::{Read};
 use std::net::TcpStream;
 
 use chrono::{DateTime, FixedOffset, TimeZone};
@@ -108,20 +108,17 @@ pub fn key_share(public_key: &[u8]) -> Vec<u8> {
     )
 }
 
-pub fn trunc_end_22(message: &Vec<u8>) -> Vec<u8> {
+pub fn trunc_end_with_trailer(message: &Vec<u8>, trailer: u8) -> Vec<u8> {
     let mut ind = message.len() - 1;
-    while message[ind]!=22 && ind>0 {
+    while ind>0 && message[ind]!=trailer {
         ind = ind - 1;
     }
-    message[..ind].to_vec()
-}
+    if ind > 0 {
+        message[..ind].to_vec()
+    } else {
+        message[..].to_vec()
+    }
 
-pub fn trunc_end_23(message: &Vec<u8>) -> Vec<u8> {
-    let mut ind = message.len() - 1;
-    while message[ind]!=23 && ind>0 {
-        ind = ind - 1;
-    }
-    message[..ind].to_vec()
 }
 
 pub fn contains_handshake_finish(message: &Vec<u8>) -> bool {
@@ -135,8 +132,6 @@ pub fn contains_handshake_finish(message: &Vec<u8>) -> bool {
     }
     return  false;
 }
-
-
 
 pub fn parse_server_hello(buf: & [u8]) -> ServerHello {
     let mut hello = ServerHello {
@@ -167,10 +162,10 @@ pub fn parse_server_hello(buf: & [u8]) -> ServerHello {
         current_pos = current_pos + 2;//buf.take(2); // cipher suite
         current_pos = current_pos + 1;// buf.take(1); // compression
 
-        let mut dst = [0u8; 2];
-        dst.clone_from_slice(&buf[current_pos..current_pos+2]);
-        let extensions_len = u16::from_be_bytes(dst);//let extensions_len = buf.read_u16().expect("Can t read len of extensions!");
-        //let extensions = buf.read_bytes(extensions_len);
+        //let mut dst = [0u8; 2];
+        //dst.clone_from_slice(&buf[current_pos..current_pos+2]);
+        //let _extensions_len = u16::from_be_bytes(dst);//let extensions_len = buf.read_u16().expect("Can t read len of extensions!");
+        //let extensions = buf.read_bytes(extensions_len); // need check extension
         current_pos = current_pos + 2;
 
         while &current_pos+2<buf.len() { // !extensions.is_empty()

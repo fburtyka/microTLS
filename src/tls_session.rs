@@ -2,6 +2,7 @@
 mod aes256gcm;
 mod certs;
 mod hkdf_sha256;
+mod sha512;
 mod x25519;
 
 use x25519::curve25519_donna;
@@ -259,7 +260,7 @@ impl Session {
         if server_handshake_message.len()>2000 {
             self.messages.encrypted_server_handshake = record.clone();
         } else {
-            server_handshake_message = format::trunc_end_22(&server_handshake_message);//server_handshake_message.pop();
+            server_handshake_message = format::trunc_end_with_trailer(&server_handshake_message, 22u8);//server_handshake_message.pop();
             println!("server_handshake_message is : {:?}", &server_handshake_message);
             //server_handshake_message = [8u8, 0u8, 0u8, 2u8, 0u8, 0u8].to_vec();
             let mut records_received_counter = 1u8;
@@ -269,7 +270,7 @@ impl Session {
                 let mut iv = self.keys.server_handshake_iv.clone();
                 iv[11] ^= records_received_counter;
                 let mut server_handshake_message_next_part = decrypt(&self.keys.server_handshake_key, &iv, &record.0[..]);
-                server_handshake_message_next_part = format::trunc_end_22(&server_handshake_message_next_part);//server_handshake_message_next_part.pop();
+                server_handshake_message_next_part = format::trunc_end_with_trailer(&server_handshake_message_next_part, 22u8);// trunc end zeros with 22
                 println!("server_handshake_message_next_part is : {:?}", &server_handshake_message_next_part);
                 //let message_type = server_handshake_message_next_part[0];
                 let handshake_finish = format::contains_handshake_finish(&server_handshake_message_next_part);
@@ -324,12 +325,47 @@ impl Session {
         println!("signature_len is : {:?}", &signature_len);
         let signature = &certs_chain[certs_chain_len + 11..certs_chain_len + 11 + signature_len];
 
+        //let signature_with_type = concatenate(&[ &certs_chain[certs_chain_len + 7..certs_chain_len + 8], &signature]);
+
         let current_timestamp = 1000i64;// SystemTime::now()
 
-        let client_server_hello = format::concatenate(&[self.messages.client_hello.contents(), self.messages.server_hello.contents()]);
-        let check_sum = hkdf_sha256::sum256(&client_server_hello);
+        let client_server_hello = format::concatenate(&[self.messages.client_hello.contents(),
+            self.messages.server_hello.contents(), &handshake_data[..4+len_of_padding+1+certs_chain_len+3] ]);
+
+        let check_sum = hkdf_sha256::sum256(&client_server_hello).to_vec(); /*match sign_type {
+            SHA256WITH_RSAE => hkdf_sha256::sum256(&client_server_hello).to_vec(),
+            SHA256WITH_RSA => hkdf_sha256::sum256(&client_server_hello).to_vec(),
+            ECDSA_WITH_SHA256 => hkdf_sha256::sum256(&client_server_hello).to_vec(),
+            SHA256WITH_RSAPSS => hkdf_sha256::sum256(&client_server_hello).to_vec(),
+            ECDSA_WITH_SHA384 => sha512::sum384(&client_server_hello).to_vec(),
+            SHA384WITH_RSAPSS => sha512::sum384(&client_server_hello).to_vec(),
+            SHA384WITH_RSA => sha512::sum384(&client_server_hello).to_vec(),
+            SHA384WITH_RSAE => sha512::sum384(&client_server_hello).to_vec(),
+            _ => panic!("not supported (not sha256 or sha384) type of signature" ),
+        };*/
+
+        let context: [u8; 98] = [32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+        32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+        32, 84, 76, 83, 32, 49, 46, 51, 44, 32, 115, 101, 114, 118, 101, 114, 32, 67, 101, 114, 116, 105, 102, 105, 99, 97, 116, 101, 86, 101,
+        114, 105, 102, 121, 0];
+
+        let check_sum_extend = format::concatenate( &[ &context, &check_sum]);
+
+        let check_prepared = match sign_type {
+            SHA256WITH_RSAE => hkdf_sha256::sum256(&check_sum_extend).to_vec(),
+            SHA256WITH_RSA => hkdf_sha256::sum256(&check_sum_extend).to_vec(),
+            ECDSA_WITH_SHA256 => hkdf_sha256::sum256(&check_sum_extend).to_vec(),
+            SHA256WITH_RSAPSS => hkdf_sha256::sum256(&check_sum_extend).to_vec(),
+            ECDSA_WITH_SHA384 => sha512::sum384(&check_sum_extend).to_vec(),
+            SHA384WITH_RSAPSS => sha512::sum384(&check_sum_extend).to_vec(),
+            SHA384WITH_RSA => sha512::sum384(&check_sum_extend).to_vec(),
+            SHA384WITH_RSAE => sha512::sum384(&check_sum_extend).to_vec(),
+            _ => panic!("not supported (not sha256 or 384) type of signature")
+        };
+
+        println!("client_server_hello is : {:?}", &client_server_hello);
         let check_result = check_certs_with_known_roots(current_timestamp,
-                        &check_sum,
+                        &check_prepared,
                         &certs_chain[4..certs_chain_len+1],
                         &signature);
         if check_result.is_none() {
@@ -476,7 +512,7 @@ impl Session {
         loop {
             println!("receive a portion!");
             let mut pt = self.receive_http_data();
-            pt = format::trunc_end_23(&pt);
+            pt = format::trunc_end_with_trailer(&pt, 23u8); // trunc zeroes with 23
             println!("pt is : {:?}", pt);
             response.extend_from_slice(&pt[..pt.len()]); // response.extend_from_slice(&pt[..pt.len()-1]);
             //response.push(23);
@@ -699,7 +735,7 @@ pub fn extract_json_public_key_from_tls(raw: Vec<u8>) -> Vec<u8> {
     }
 
     let server_handshake_message = decrypt(&server_handshake_key, &server_handshake_iv, &encrypted_server_handshake[..]);
-    println!("server_handshake_message is : {:?}", &server_handshake_message);
+    //println!("server_handshake_message is : {:?}", &server_handshake_message);
     let decrypted_server_handshake = DecryptedRecord{ 0: server_handshake_message};
 
     // ============= begin make application keys ===================================
@@ -712,9 +748,9 @@ pub fn extract_json_public_key_from_tls(raw: Vec<u8>) -> Vec<u8> {
     let derived_secret = derive_secret(&handshake_secret, "derived", &[]);
     let master_secret = hkdf_sha256::extract(&zeros, &derived_secret);//let master_secret = Hkdf::<Sha256>::extract(Some(&zeros), &derived_secret);
 
-    let c_ap_secret = derive_secret(&master_secret, "c ap traffic", &handshake_messages);
-    let client_application_key: [u8;16] = hkdf_expand_label(&c_ap_secret, "key", &[], 16).try_into().unwrap();
-    let client_application_iv: [u8;12] = hkdf_expand_label(&c_ap_secret, "iv", &[], 12).try_into().unwrap();
+    //let c_ap_secret = derive_secret(&master_secret, "c ap traffic", &handshake_messages);
+    //let client_application_key: [u8;16] = hkdf_expand_label(&c_ap_secret, "key", &[], 16).try_into().unwrap();
+    //let client_application_iv: [u8;12] = hkdf_expand_label(&c_ap_secret, "iv", &[], 12).try_into().unwrap();
 
     let s_ap_secret = derive_secret(&master_secret, "s ap traffic", &handshake_messages);
     let server_application_key: [u8;16] = hkdf_expand_label(&s_ap_secret, "key", &[], 16).try_into().unwrap();
@@ -728,6 +764,7 @@ pub fn extract_json_public_key_from_tls(raw: Vec<u8>) -> Vec<u8> {
 
     //next three bytes is the length of certs chain
     let certs_chain_len = (certs_chain[0] as usize)*65536 + (certs_chain[1] as usize)*256 + (certs_chain[2] as usize);
+    println!("&handshake_data[..4+len_of_padding+1+certs_chain_len+3] is : {:?}", &handshake_data[..4+len_of_padding+1+certs_chain_len+3]);
     println!("certs_chain is : {:?}", &certs_chain);
     println!("certs_chain_len is : {:?}", &certs_chain_len); // must be 4205 = 4096 + 109
 
@@ -739,14 +776,46 @@ pub fn extract_json_public_key_from_tls(raw: Vec<u8>) -> Vec<u8> {
 
     let signature_len = (certs_chain[certs_chain_len + 9] as usize)*256 + (certs_chain[certs_chain_len + 10] as usize);
     let signature = &certs_chain[certs_chain_len + 11..certs_chain_len + 11 + signature_len];
+    //let signature_with_type = concatenate(&[ &certs_chain[certs_chain_len + 7..certs_chain_len + 8], &signature]);
 
-    let client_server_hello = format::concatenate(&[&client_hello[5..], &server_hello[5..]]);
-    if sign_type!=SHA256WITH_RSAE && sign_type!=SHA256WITH_RSA && sign_type!=ECDSA_WITH_SHA256 && sign_type!=SHA256WITH_RSAPSS {
-        return vec![0u8, 3u8, 38u8];// "not supported (not sha256) type of signature"
-    }
-    let check_sum = hkdf_sha256::sum256(&client_server_hello);
+    let client_server_hello = format::concatenate(&[&client_hello[5..], &server_hello[5..],
+        &handshake_data[..4+len_of_padding+1+certs_chain_len+3] ]);
 
-    if !check_certs_with_fixed_root(timestamp, &check_sum, &certs_chain[4..certs_chain_len+1], &signature, &external_root_cert) {
+    //if sign_type!=SHA256WITH_RSAE && sign_type!=SHA256WITH_RSA && sign_type!=ECDSA_WITH_SHA256 && sign_type!=SHA256WITH_RSAPSS {
+        //return vec![0u8, 3u8, 38u8];// "not supported (not sha256) type of signature"
+    //}
+    let check_sum = hkdf_sha256::sum256(&client_server_hello).to_vec(); /*match sign_type {
+        SHA256WITH_RSAE => hkdf_sha256::sum256(&client_server_hello).to_vec(),
+        SHA256WITH_RSA => hkdf_sha256::sum256(&client_server_hello).to_vec(),
+        ECDSA_WITH_SHA256 => hkdf_sha256::sum256(&client_server_hello).to_vec(),
+        SHA256WITH_RSAPSS => hkdf_sha256::sum256(&client_server_hello).to_vec(),
+        ECDSA_WITH_SHA384 => sha512::sum384(&client_server_hello).to_vec(),
+        SHA384WITH_RSAPSS => sha512::sum384(&client_server_hello).to_vec(),
+        SHA384WITH_RSA =>let check_sum = hkdf_sha256::sum256(&client_server_hello).to_vec(); sha512::sum384(&client_server_hello).to_vec(),
+        SHA384WITH_RSAE => sha512::sum384(&client_server_hello).to_vec(),
+        _ => return vec![0u8, 3u8, 38u8],// "not supported (not sha256 or 384) type of signature"
+    };*/
+
+    let context: [u8; 98] = [32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+        32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+        32, 84, 76, 83, 32, 49, 46, 51, 44, 32, 115, 101, 114, 118, 101, 114, 32, 67, 101, 114, 116, 105, 102, 105, 99, 97, 116, 101, 86, 101,
+        114, 105, 102, 121, 0];
+
+    let check_sum_extend = format::concatenate( &[ &context, &check_sum]);
+
+    let check_prepared = match sign_type {
+        SHA256WITH_RSAE => hkdf_sha256::sum256(&check_sum_extend).to_vec(),
+        SHA256WITH_RSA => hkdf_sha256::sum256(&check_sum_extend).to_vec(),
+        ECDSA_WITH_SHA256 => hkdf_sha256::sum256(&check_sum_extend).to_vec(),
+        SHA256WITH_RSAPSS => hkdf_sha256::sum256(&check_sum_extend).to_vec(),
+        ECDSA_WITH_SHA384 => sha512::sum384(&check_sum_extend).to_vec(),
+        SHA384WITH_RSAPSS => sha512::sum384(&check_sum_extend).to_vec(),
+        SHA384WITH_RSA => sha512::sum384(&check_sum_extend).to_vec(),
+        SHA384WITH_RSAE => sha512::sum384(&check_sum_extend).to_vec(),
+        _ => return vec![0u8, 3u8, 38u8],// "not supported (not sha256 or 384) type of signature"
+    };
+
+    if !check_certs_with_fixed_root(timestamp, &check_prepared, &certs_chain[4..certs_chain_len+1], &signature, &external_root_cert) {
         return vec![0u8, 3u8, 39u8]; // "error in certificates chain !"
     }
 
@@ -783,10 +852,9 @@ pub fn extract_json_public_key_from_tls(raw: Vec<u8>) -> Vec<u8> {
     let mut plaintext = decrypt(&server_application_key, &iv.try_into().unwrap(), &http_response[..len_of_first_packet]);
     //println!("decrypted app plaintext is : {:?}", &plaintext);
     println!("{}", String::from_utf8_lossy(&plaintext));
-    plaintext = format::trunc_end_23(&plaintext);//plaintext.pop();
+    plaintext = format::trunc_end_with_trailer(&plaintext, 23u8);// trunc end zeroes with 23
 
     while records_received<records_received_declared-1 {
-        // Увеличиваем количество полученных записей
         records_received += 1;
         let start_index = len_of_first_packet;
         let len_of_packet = (http_response[start_index+3] as usize)*256 + (http_response[start_index+4] as usize) + 5;
@@ -799,7 +867,7 @@ pub fn extract_json_public_key_from_tls(raw: Vec<u8>) -> Vec<u8> {
         let mut plaintext2 = decrypt(&server_application_key, &iv2.try_into().unwrap(), &ciphertext2);
         println!("decrypted app plaintext2 is : {:?}", &plaintext2);
         //plaintext2.pop();
-        plaintext2 = format::trunc_end_23(&plaintext2);
+        plaintext2 = format::trunc_end_with_trailer(&plaintext2, 23u8); // trunc end zeroes with 23
 
         plaintext.append(&mut plaintext2);
         len_of_first_packet = len_of_first_packet + len_of_packet;
@@ -807,8 +875,6 @@ pub fn extract_json_public_key_from_tls(raw: Vec<u8>) -> Vec<u8> {
         //println!("{}", String::from_utf8_lossy(&plaintext));
     }
     //println!("{}", String::from_utf8_lossy(&plaintext));
-
-
 
 
     let plaintext_as_string = String::from_utf8_lossy(&plaintext).to_string();
@@ -825,7 +891,7 @@ pub fn extract_json_public_key_from_tls(raw: Vec<u8>) -> Vec<u8> {
         println!("Found kid: {}", substring);
 
         //let mut current = substring.as_bytes().to_vec();
-        let mut current_decoded_kid = Vec::from_hex(substring).unwrap();
+        let current_decoded_kid = Vec::from_hex(substring).unwrap();
         println!("current_decoded_kid is : {:?}", &current_decoded_kid);
 
         if current_decoded_kid.eq(&kid.to_vec()){
